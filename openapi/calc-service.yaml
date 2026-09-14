@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: Calc Service
+  version: 1.0.0
+  description: |
+    Calculates ROI, GP/h, XP/h and GP/XP for **every** possible crafting
+    path to produce an item, including intermediate steps. Results are
+    sorted by GP/h descending and cached for 10 minutes.
+    
+    The `aph` query parameter overrides the recipe's actions-per-hour
+    for the whole path; if omitted the stored value is used, falling
+    back to a per-skill default.
+servers:
+  - url: http://localhost:8084
+    description: Local development
+tags:
+  - { name: health }
+  - { name: calc }
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /calc/{itemID}:
+    get:
+      tags: [calc]
+      summary: Profitability paths for one item
+      operationId: calculateItem
+      parameters:
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: aph
+          in: query
+          description: Override actions-per-hour for all steps (0 = use recipe value)
+          schema: { type: integer, example: 800 }
+        - name: normalized
+          in: query
+          description: Use averaged prices instead of instant buy/sell
+          schema: { type: boolean, default: false }
+        - name: player
+          in: query
+          description: Optional player name to filter by skill level
+          schema: { type: string }
+        - name: mode
+          in: query
+          schema: { type: string, enum: [normal, ironman, hardcore], default: normal }
+      responses:
+        '200':
+          description: Calculation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Result' }
+        '500':
+          description: Calculation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /calc/batch:
+    get:
+      tags: [calc]
+      summary: Calculate for multiple items
+      operationId: calculateBatch
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: string, example: "1656,2357" }
+        - name: aph
+          in: query
+          schema: { type: integer }
+        - name: normalized
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Map of item ID to Result or error
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+components:
+  schemas:
+    Result:
+      type: object
+      properties:
+        item_id: { type: integer, format: int64 }
+        paths:
+          type: array
+          items: { $ref: '#/components/schemas/PathResult' }
+        cached:  { type: boolean }
+    PathResult:
+      type: object
+      properties:
+        path:
+          type: array
+          items: { type: string }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/Step' }
+        profit_per_trade: { type: number, format: double }
+        gp_per_hour:      { type: number, format: double }
+        xp_per_hour:      { type: number, format: double }
+        gp_per_xp:        { type: number, format: double }
+        roi_pct:          { type: number, format: double }
+        total_hours:      { type: number, format: double }
+        total_xp:         { type: number, format: double }
+        buy_cost:         { type: number, format: double }
+        sell_revenue:     { type: number, format: double }
+        tax_paid:         { type: number, format: double }
+        actions_per_hour: { type: integer }
+    Step:
+      type: object
+      properties:
+        recipe:       { type: string }
+        skill:        { type: string }
+        level_req:    { type: integer }
+        xp:           { type: number, format: double }
+        aph:          { type: integer }
+        buy_cost:     { type: number, format: double }
+        sell_revenue: { type: number, format: double }
+        profit:       { type: number, format: double }
+    Error:
+      type: object
+      properties:
+        error: { type: string }

@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: GE Price Service
+  version: 1.0.0
+  description: |
+    Polls the Weirdgloop exchange-history API for RuneScape 3 item prices
+    and volumes. Publishes per-item updates to Redis on channel
+    `prices:{item_id}` for realtime fan-out. Respects the API rate limit
+    by throttling between batches.
+servers:
+  - url: http://localhost:8083
+    description: Local development
+tags:
+  - { name: health }
+  - { name: prices }
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /prices/latest:
+    get:
+      tags: [prices]
+      summary: Latest snapshot for multiple items
+      operationId: getLatestPrices
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated item IDs
+          schema: { type: string, example: "1656,2357,1623" }
+      responses:
+        '200':
+          description: Price snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:  { type: integer }
+                  prices:
+                    type: array
+                    items: { $ref: '#/components/schemas/PriceSnapshot' }
+        '400':
+          description: Missing ids
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /prices/history/{itemID}:
+    get:
+      tags: [prices]
+      summary: Time-series history for one item
+      operationId: getPriceHistory
+      parameters:
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: from
+          in: query
+          description: RFC3339 start time (default 7 days ago)
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: RFC3339 end time (default now)
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  history:
+                    type: array
+                    items: { $ref: '#/components/schemas/PriceSnapshot' }
+  /prices/change/{itemID}:
+    get:
+      tags: [prices]
+      summary: 24-hour price change
+      operationId: getPriceChange
+      parameters:
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Change and both endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:      { type: integer, format: int64 }
+                  change_pct:   { type: number, format: double }
+                  current:      { $ref: '#/components/schemas/PriceSnapshot' }
+                  previous_24h: { $ref: '#/components/schemas/PriceSnapshot' }
+components:
+  schemas:
+    PriceSnapshot:
+      type: object
+      properties:
+        id:         { type: integer, format: int64 }
+        item_id:    { type: integer, format: int64 }
+        ts:         { type: string, format: date-time }
+        buy:        { type: integer, format: int64 }
+        sell:       { type: integer, format: int64 }
+        volume:     { type: integer, format: int64 }
+        normalized: { type: boolean }
+    Error:
+      type: object
+      properties:
+        error: { type: string }

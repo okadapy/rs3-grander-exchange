@@ -1,0 +1,4 @@
+bin/
+mysql_data/
+*.log
+.env.local

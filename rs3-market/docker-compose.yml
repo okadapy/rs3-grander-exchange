@@ -1,0 +1,91 @@
+version: "3.9"
+
+x-service-env: &svc-env
+  RS3_ENV: local
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${MYSQL_USER:-rs3}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rs3pass}
+    ports: ["3306:3306"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  hiscore-service:
+    build: { context: ., dockerfile: hiscore-service/Dockerfile }
+    environment:
+      <<: *svc-env
+      RS3_CONFIG: /app/config.yaml
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8081:8081"]
+
+  recipe-service:
+    build: { context: ., dockerfile: recipe-service/Dockerfile }
+    environment:
+      <<: *svc-env
+      RS3_CONFIG: /app/config.yaml
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8082:8082"]
+
+  ge-price-service:
+    build: { context: ., dockerfile: ge-price-service/Dockerfile }
+    environment:
+      <<: *svc-env
+      RS3_CONFIG: /app/config.yaml
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      recipe-service: { condition: service_started }
+    ports: ["8083:8083"]
+
+  calc-service:
+    build: { context: ., dockerfile: calc-service/Dockerfile }
+    environment:
+      <<: *svc-env
+      RS3_CONFIG: /app/config.yaml
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      recipe-service: { condition: service_started }
+      ge-price-service: { condition: service_started }
+    ports: ["8084:8084"]
+
+  realtime-service:
+    build: { context: ., dockerfile: realtime-service/Dockerfile }
+    environment:
+      <<: *svc-env
+      RS3_CONFIG: /app/config.yaml
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      ge-price-service: { condition: service_started }
+    ports: ["8085:8085"]
+
+volumes:
+  mysql_data:
+  redis_data:

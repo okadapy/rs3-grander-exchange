@@ -1,0 +1,156 @@
+openapi: 3.0.3
+info:
+  title: Realtime Service
+  version: 1.0.0
+  description: |
+    WebSocket gateway for per-item price updates and a single global chat
+    room.
+
+    ## WebSocket
+
+    Connect to `/ws?token=<JWT>`. Client frames are JSON:
+
+    - `{"action": "subscribe", "item_ids": [1,2,3]}`
+    - `{"action": "unsubscribe", "item_ids": [2]}`
+    - `{"action": "chat", "body": "hello"}`
+
+    Server frames are JSON:
+
+    - `{"type": "price", "payload": <PriceSnapshot>}`
+    - `{"type": "chat",  "payload": <ChatMessage>}`
+    - `{"type": "error", "payload": {"message": "..."}}`
+
+    Chat is rate-limited to one message every 3 seconds per user.
+servers:
+  - url: http://localhost:8085
+    description: Local development
+tags:
+  - { name: health }
+  - { name: auth }
+  - { name: chat }
+  - { name: ws }
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a chat user
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:       { type: integer, format: int64 }
+                  username: { type: string }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Log in and receive a JWT
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+      responses:
+        '200':
+          description: JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /chat/history:
+    get:
+      tags: [chat]
+      summary: Recent chat messages (chronological)
+      operationId: getChatHistory
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: before
+          in: query
+          description: RFC3339 timestamp — return messages before this
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChatMessage' }
+  /ws:
+    get:
+      tags: [ws]
+      summary: WebSocket upgrade
+      operationId: connectWebSocket
+      description: |
+        Upgrade to WebSocket. Authenticate with `?token=<JWT>` obtained
+        from `/auth/login`. All frames are JSON — see service description.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '101':
+          description: Switching Protocols
+        '401':
+          description: Invalid or missing token
+components:
+  schemas:
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 32 }
+        password: { type: string, minLength: 6 }
+    ChatMessage:
+      type: object
+      properties:
+        id:         { type: integer, format: int64 }
+        user_id:    { type: integer, format: int64 }
+        username:   { type: string }
+        body:       { type: string }
+        created_at: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        error: { type: string }

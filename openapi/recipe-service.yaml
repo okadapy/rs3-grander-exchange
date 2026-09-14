@@ -1,0 +1,157 @@
+openapi: 3.0.3
+info:
+  title: Recipe Service
+  version: 1.0.0
+  description: |
+    Scrapes, stores and serves RuneScape 3 crafting recipes and their
+    dependency trees. Supports filtering by skill and by a character's
+    level in that skill. Recipe trees are cached in Redis for 1 hour.
+servers:
+  - url: http://localhost:8082
+    description: Local development
+tags:
+  - { name: health }
+  - { name: recipes }
+  - { name: internal, description: Intended only for other services }
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /recipes:
+    get:
+      tags: [recipes]
+      summary: List recipes with optional filters
+      operationId: listRecipes
+      parameters:
+        - name: skill
+          in: query
+          schema: { type: string, example: Crafting }
+        - name: level
+          in: query
+          description: Maximum level requirement (inclusive)
+          schema: { type: integer, example: 75 }
+      responses:
+        '200':
+          description: List of recipes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:   { type: integer }
+                  recipes:
+                    type: array
+                    items: { $ref: '#/components/schemas/Recipe' }
+  /recipes/{itemID}:
+    get:
+      tags: [recipes]
+      summary: Full recipe tree for an output item
+      operationId: getRecipeTreeAlias
+      parameters:
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Recipe tree
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tree' }
+        '404':
+          description: No recipe found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /recipes/{itemID}/tree:
+    get:
+      tags: [recipes]
+      summary: Recipe dependency tree (canonical endpoint)
+      operationId: getRecipeTree
+      parameters:
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Recipe tree
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tree' }
+        '404':
+          description: No recipe found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /internal/all-item-ids:
+    get:
+      tags: [internal]
+      summary: All distinct output item IDs
+      description: Used by ge-price-service to know which items to poll.
+      operationId: getAllItemIDs
+      responses:
+        '200':
+          description: Item IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_ids:
+                    type: array
+                    items: { type: integer, format: int64 }
+components:
+  schemas:
+    Recipe:
+      type: object
+      properties:
+        id:               { type: integer, format: int64 }
+        name:             { type: string }
+        output_item_id:   { type: integer, format: int64 }
+        output_item_name: { type: string }
+        output_qty:       { type: integer }
+        skill:            { type: string, example: Crafting }
+        level_req:        { type: integer }
+        xp_per_action:    { type: number, format: double }
+        actions_per_hour: { type: integer }
+        members:          { type: boolean }
+        source:           { type: string, example: runescape.wiki }
+        inputs:
+          type: array
+          items: { $ref: '#/components/schemas/RecipeInput' }
+    RecipeInput:
+      type: object
+      properties:
+        id:              { type: integer, format: int64 }
+        recipe_id:       { type: integer, format: int64 }
+        item_id:         { type: integer, format: int64 }
+        item_name:       { type: string }
+        quantity:        { type: integer }
+        is_intermediate: { type: boolean }
+    Tree:
+      type: object
+      properties:
+        root: { $ref: '#/components/schemas/Node' }
+    Node:
+      type: object
+      properties:
+        recipe:   { $ref: '#/components/schemas/Recipe' }
+        children:
+          type: array
+          items: { $ref: '#/components/schemas/Node' }
+        depth:    { type: integer }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
