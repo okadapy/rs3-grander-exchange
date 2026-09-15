@@ -24,6 +24,7 @@ export const queryKeys = {
     ['calcBatch', ids.join(','), params] as const,
   calcItem: (itemId: number, params: CalcParams) =>
     ['calcItem', itemId, params] as const,
+  recipeTree: (itemId: number) => ['recipeTree', itemId] as const,
   itemSearch: (query: string, source: ItemSource, limit: number, offset: number) =>
     ['itemSearch', query, source, limit, offset] as const,
   chatHistory: () => ['chatHistory'] as const,

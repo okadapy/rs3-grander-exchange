@@ -11,6 +11,21 @@ type LiquidityTier = components['schemas']['LiquidityTier'];
 
 export type RowCaveat = 'incomplete' | 'default-aph' | 'no-throughput';
 
+/**
+ * The server ranks paths by GP/h, which is not the same as by money made: for
+ * Rune bar its first path loses 3463 GP a craft while its third loses 553.
+ * Every money column, and the breakdown behind them, is read as "what this
+ * craft earns", so the path that earns most — or loses least — is the one
+ * they all describe.
+ */
+export function mostProfitable(paths: CalcPath[]): CalcPath | null {
+  let best: CalcPath | null = null;
+  for (const candidate of paths) {
+    if (!best || candidate.profit_per_craft > best.profit_per_craft) best = candidate;
+  }
+  return best;
+}
+
 export interface RecipeRow {
   id: number;
   itemId: number;
@@ -38,6 +53,9 @@ export interface RecipeRow {
   // breakdown reads its steps, and they arrive in the same /calc/batch
   // response the money columns are already built from.
   bestPath: CalcPath | null;
+  // Every strategy the server evaluated, so the breakdown can offer them
+  // without asking for the item again.
+  paths: CalcPath[];
   error: string | null;
 }
 
@@ -65,7 +83,8 @@ export function buildRows({ recipes, calc, prices, stats }: BuildRowsInput): Rec
     const price = prices.get(itemId);
     const stat = stats.get(itemId);
     const entry = calc.get(itemId);
-    const best = entry?.result?.paths?.[0] ?? null;
+    const paths = entry?.result?.paths ?? [];
+    const best = mostProfitable(paths);
 
     let error: string | null = null;
     if (!entry) error = NOT_CALCULATED;
@@ -103,6 +122,7 @@ export function buildRows({ recipes, calc, prices, stats }: BuildRowsInput): Rec
       caveats,
       unpricedInputs: best?.unpriced_inputs ?? [],
       bestPath: best,
+      paths,
       error,
     });
   }

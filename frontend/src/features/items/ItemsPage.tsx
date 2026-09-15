@@ -169,7 +169,13 @@ export function ItemsPage() {
               ) : null
             }
           >
-            {(data) => <CraftBreakdown itemName={selected.name} path={data.paths[0]} />}
+            {(data) => (
+              <CraftBreakdown
+                itemName={selected.name}
+                itemId={selected.item_id}
+                paths={data.paths}
+              />
+            )}
           </QueryState>
         </Box>
       )}

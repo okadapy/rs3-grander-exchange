@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { batchEntry, liquidity, path, recipe, result, snapshot } from '../../test/fixtures';
-import { buildRows, firstAssumptions } from './buildRows';
+import { buildRows, firstAssumptions, mostProfitable } from './buildRows';
 
 function input(over: Partial<Parameters<typeof buildRows>[0]> = {}) {
   return {
@@ -173,4 +173,52 @@ describe('firstAssumptions', () => {
   it('returns null when every entry failed', () => {
     expect(firstAssumptions([{ item_id: 1, error: 'nope' }])).toBeNull();
   });
+});
+
+describe('mostProfitable', () => {
+  // Real /calc/2363 ordering: the server ranks by GP/h, so its first path
+  // loses 3463 a craft while its third loses 553. Reading the first as "the
+  // best" puts the worse number in every money column.
+  const ranked = [
+    path({ path: ['Mithril ore', 'Luminite', 'Rune bar'], profit_per_craft: -3_463 }),
+    path({ path: ['Luminite', 'Rune bar'], profit_per_craft: -1_246 }),
+    path({ path: ['Rune bar'], profit_per_craft: -553 }),
+  ];
+
+  it('takes the smallest loss when every path loses money', () => {
+    expect(mostProfitable(ranked)?.profit_per_craft).toBe(-553);
+  });
+
+  it('takes the largest profit when paths earn', () => {
+    const earning = [
+      path({ profit_per_craft: 4_149 }),
+      path({ profit_per_craft: 2_414 }),
+    ];
+    expect(mostProfitable(earning)?.profit_per_craft).toBe(4_149);
+  });
+
+  it('has nothing to choose from when the server returned no path', () => {
+    expect(mostProfitable([])).toBeNull();
+  });
+});
+
+it('drives the money columns from the most profitable path, not the first', () => {
+  const rows = buildRows(
+    input({
+      calc: new Map([
+        [1603, batchEntry({
+          result: result({
+            paths: [
+              path({ profit_per_craft: -3_463, roi_pct: -40, gp_per_hour: -640_637 }),
+              path({ profit_per_craft: -553, roi_pct: -6, gp_per_hour: -737_333 }),
+            ],
+          }),
+        })],
+      ]),
+    }),
+  );
+
+  expect(rows[0].margin).toBe(-553);
+  expect(rows[0].roiPct).toBe(-6);
+  expect(rows[0].paths).toHaveLength(2);
 });

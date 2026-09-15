@@ -91,10 +91,19 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
       // path to break down and keeps a bare cell.
       <Tooltip
         title={
-          params.row.bestPath
-            ? <CraftBreakdown itemName={params.row.itemName} path={params.row.bestPath} />
-            : ''
+          params.row.paths.length > 0 ? (
+            <CraftBreakdown
+              itemName={params.row.itemName}
+              itemId={params.row.itemId}
+              paths={params.row.paths}
+            />
+          ) : (
+            ''
+          )
         }
+        // The breakdown offers a path to switch to, so the pointer has to be
+        // able to travel into it without the tooltip closing underneath.
+        leaveDelay={200}
         placement="right-start"
         slotProps={{
           tooltip: {

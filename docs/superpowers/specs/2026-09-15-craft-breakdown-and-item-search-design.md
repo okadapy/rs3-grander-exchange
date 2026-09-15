@@ -43,6 +43,14 @@ and profit — the server's own figures for that stage, priced on its own.
 
 Two rules it holds to:
 
+- **The path shown is the most profitable one, not the server's first.**
+  `/calc` ranks by GP/h, which is not the order of money made: for Rune bar
+  its first path loses 3463 GP a craft while its third loses 553. Every money
+  column is read as "what this craft earns", so `mostProfitable` picks by
+  `profit_per_craft` — largest gain, or smallest loss — and the row's columns
+  and the breakdown behind them are fed from that one path. The cost is real
+  and accepted: the GP/h column can now show less than the server's best,
+  because the path that earns most per craft is not always the fastest.
 - **The stages are never summed.** The first draft of this component carried a
   running profit accumulated down the column, on the assumption that the
   stages compose. Driving the real gateway disproved it: for item 2363 the
@@ -57,9 +65,24 @@ Two rules it holds to:
   `profit_per_craft` from the path, never from the steps.
 - A path with no steps says so instead of drawing an empty table.
 
-It hangs off the item-name cell as a `Tooltip` rather than a popover: the
-content is read-only, so nothing in it needs to survive the pointer leaving,
-and a tooltip opens on keyboard focus as well as hover.
+Every path the server evaluated is listed above the table with its profit and
+GP/h, and picking one redraws the stages. Rune platebody returns 24 of them —
+buying the bars, smelting them from runite and luminite, or going all the way
+down to mithril ore — and which is best is precisely the question the table
+exists to answer. Without the list, only one of the 24 was ever visible, and
+the deep chains looked absent from the data rather than merely unranked.
+
+Each stage also names what it consumes: bought inputs, and those taken from an
+earlier stage of the same path. `CalcStep` carries no input list at all, so
+this comes from `/recipes/{itemID}`, fetched lazily when a breakdown is opened
+— pre-fetching would be 25 trees for a panel that opens over one row. An input
+counts as bought unless another stage of the same path produces it, which is
+what separates "buy the bars" from "smelt them from ore". If the tree fails to
+load, the numbers still tabulate; the names are a garnish, not a precondition.
+
+It hangs off the item-name cell as a `Tooltip` rather than a popover: it opens
+on keyboard focus as well as hover, and MUI keeps it open while the pointer is
+inside, which the path list needs.
 
 **No new request.** `/calc/batch` already carries the steps for all 25 items on
 the page; `buildRows` kept only `path` (the recipe names, which nothing read)
@@ -82,7 +105,7 @@ server would page through thousands of rows to answer a keystroke.
 Picking a row calls `/calc/{itemID}` — the batch endpoint is keyed on the IDs
 the recipe table is showing, and a searched item is rarely among them — and
 renders the same `CraftBreakdown`. That reuse is why the component takes a
-`CalcPath` rather than a `RecipeRow`.
+list of `CalcPath` and an item ID rather than a `RecipeRow`.
 
 Each failure mode gets its own answer rather than an empty grid: too short a
 query, nothing matched, a failed search (message plus Retry, via `QueryState`),
@@ -92,8 +115,10 @@ and an item with no priceable path.
 
 RTL and MSW, no mocking of internals. `CraftBreakdown` is covered directly
 (step order, per-stage figures with no derived running total, server totals,
-empty steps, incomplete paths) on fixtures copied from real `/calc/1673`
-responses, so a future running total would fail rather than look plausible;
+which path it opens on, switching paths, bought versus earlier-stage inputs,
+a failed recipe tree, empty steps, incomplete paths) on fixtures copied from
+real `/calc/1673` responses, so a future running total would fail rather than
+look plausible;
 the hover is covered through `RecipesPage`, the tab switch
 through `App`, and the search through `ItemsPage` including the debounce
 threshold, the source filter reaching the query string, and every failure mode
