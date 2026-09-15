@@ -35,10 +35,12 @@ const (
 )
 
 type Recipe struct {
-	ID             uint          `gorm:"primaryKey" json:"id"`
-	Name           string        `gorm:"uniqueIndex;size:160" json:"name"`
-	OutputItemID   int64         `gorm:"index" json:"output_item_id"`
-	OutputItemName string        `gorm:"size:160" json:"output_item_name"`
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Name         string `gorm:"uniqueIndex;size:160" json:"name"`
+	OutputItemID int64  `gorm:"index" json:"output_item_id"`
+	// Indexed because ID resolution joins recipe_inputs.item_name
+	// against this column after every scrape.
+	OutputItemName string        `gorm:"size:160;index" json:"output_item_name"`
 	OutputQty      int           `json:"output_qty"`
 	Skill          string        `gorm:"size:32;index" json:"skill"`
 	LevelReq       int           `json:"level_req"`

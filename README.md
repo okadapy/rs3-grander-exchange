@@ -178,6 +178,10 @@ Every script is idempotent, so re-running the set is safe.
 - **002** drops `ge_id_maps`. GORM derived that name from the `GEIDMap`
   struct before a `TableName` method pinned it to `geid_maps`, and left
   the original behind holding a stale copy of the item ID map.
+- **003** indexes `recipes.output_item_name`. ID resolution joins every
+  input name against it, unindexed on both sides, which took ~13s with
+  nothing to write and ~44s on a run that resolved rows. It used to run
+  once a day where nobody noticed; it now runs after every scrape.
 
 ## Local operations
 
