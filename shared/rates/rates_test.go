@@ -93,7 +93,7 @@ func TestSlotsPerCraftSumsQuantities(t *testing.T) {
 // one trip to the bank, is a timed 1600 an hour.
 func TestActionsPerHourMatchesTheTimedSmeltingRate(t *testing.T) {
 	if got := ActionsPerHour(3, 1, DefaultConfig()); got != 1600 {
-		t.Errorf("ActionsPerHour(3, 1) = %d, want 1600", got)
+		t.Errorf("ActionsPerHour(3, 1) = %v, want 1600", got)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestActionsPerHourMatchesTheTimedSmeltingRate(t *testing.T) {
 // raw tick ceiling.
 func TestActionsPerHourAllStackableInputsHitTheCeiling(t *testing.T) {
 	if got := ActionsPerHour(3, 0, DefaultConfig()); got != 2000 {
-		t.Errorf("ActionsPerHour(3, 0) = %d, want 2000", got)
+		t.Errorf("ActionsPerHour(3, 0) = %v, want 2000", got)
 	}
 }
 
@@ -111,16 +111,16 @@ func TestActionsPerHourAllStackableInputsHitTheCeiling(t *testing.T) {
 func TestActionsPerHourFallsWhenACraftEatsMoreSlots(t *testing.T) {
 	got := ActionsPerHour(3, 5, DefaultConfig())
 	if got >= 1600 {
-		t.Errorf("ActionsPerHour(3, 5) = %d, want below the single-slot 1600", got)
+		t.Errorf("ActionsPerHour(3, 5) = %v, want below the single-slot 1600", got)
 	}
 	if got <= 0 {
-		t.Errorf("ActionsPerHour(3, 5) = %d, want a positive rate", got)
+		t.Errorf("ActionsPerHour(3, 5) = %v, want a positive rate", got)
 	}
 }
 
 func TestActionsPerHourRejectsNonPositiveTicks(t *testing.T) {
 	if got := ActionsPerHour(0, 1, DefaultConfig()); got != 0 {
-		t.Errorf("ActionsPerHour(0, 1) = %d, want 0", got)
+		t.Errorf("ActionsPerHour(0, 1) = %v, want 0", got)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestActionsPerHourZeroValuedConfigFallback(t *testing.T) {
 	// Config{} is zero-valued; should fall back to DefaultConfig
 	got := ActionsPerHour(3, 1, Config{})
 	if got != 1600 {
-		t.Errorf("ActionsPerHour(3, 1, Config{}) = %d, want 1600 (defaulted)", got)
+		t.Errorf("ActionsPerHour(3, 1, Config{}) = %v, want 1600 (defaulted)", got)
 	}
 }
 
@@ -137,11 +137,11 @@ func TestActionsPerHourZeroValuedConfigFallback(t *testing.T) {
 func TestActionsPerHourInvalidInventorySlotsRejectAndDefault(t *testing.T) {
 	got := ActionsPerHour(3, 1, Config{InventorySlots: 0, BankTripTicks: 21})
 	if got != 1600 {
-		t.Errorf("ActionsPerHour with InventorySlots=0 = %d, want 1600 (defaulted)", got)
+		t.Errorf("ActionsPerHour with InventorySlots=0 = %v, want 1600 (defaulted)", got)
 	}
 	got = ActionsPerHour(3, 1, Config{InventorySlots: -1, BankTripTicks: 21})
 	if got != 1600 {
-		t.Errorf("ActionsPerHour with InventorySlots=-1 = %d, want 1600 (defaulted)", got)
+		t.Errorf("ActionsPerHour with InventorySlots=-1 = %v, want 1600 (defaulted)", got)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestActionsPerHourInvalidInventorySlotsRejectAndDefault(t *testing.T) {
 func TestActionsPerHourNegativeBankTripTicksRejectAndDefault(t *testing.T) {
 	got := ActionsPerHour(3, 1, Config{InventorySlots: 28, BankTripTicks: -1})
 	if got != 1600 {
-		t.Errorf("ActionsPerHour with BankTripTicks=-1 = %d, want 1600 (defaulted)", got)
+		t.Errorf("ActionsPerHour with BankTripTicks=-1 = %v, want 1600 (defaulted)", got)
 	}
 }
 
@@ -161,6 +161,31 @@ func TestActionsPerHourZeroBankTripTicksIsValid(t *testing.T) {
 	// craftsPerTrip = 28, tripTicks = 28*3 + 0 = 84
 	// rate = 28 * 6000 / 84 = 168000 / 84 = 2000
 	if got != 2000 {
-		t.Errorf("ActionsPerHour(3, 1, BankTripTicks=0) = %d, want 2000 (no bank trip)", got)
+		t.Errorf("ActionsPerHour(3, 1, BankTripTicks=0) = %v, want 2000 (no bank trip)", got)
+	}
+}
+
+// The rate is genuinely fractional at the top of the smithing tree. An
+// Elder rune platebody + 5 costs 80 bars, which ForgeTicks puts at
+// 10136 ticks — about 1.7 hours for one item. Computed by integer
+// division the rate truncated to zero, and calc-service's 1/aph then
+// became +Inf and took the whole response with it.
+func TestActionsPerHourIsFractionalForAnEightyBarCraft(t *testing.T) {
+	ticks, ok := ForgeTicks(80, "Elder rune", 90, 90, Boosts{})
+	if !ok {
+		t.Fatal("ForgeTicks(80 Elder rune bars at 90/90) not ok")
+	}
+
+	got := ActionsPerHour(ticks, 80, DefaultConfig())
+	if got <= 0 {
+		t.Fatalf("ActionsPerHour(%d, 80) = %v, want a positive fractional rate", ticks, got)
+	}
+
+	// One item every ~1.7 hours. Claiming one an hour would overstate
+	// its rate by seventy percent.
+	hours := 1 / float64(got)
+	if hours < 1.5 || hours > 2 {
+		t.Errorf("ActionsPerHour(%d, 80) = %v, which is one item every %v hours; want ~1.7",
+			ticks, got, hours)
 	}
 }

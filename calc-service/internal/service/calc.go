@@ -118,7 +118,7 @@ type Step struct {
 	Skill       string  `json:"skill"`
 	LevelReq    int     `json:"level_req"`
 	XP          float64 `json:"xp"`
-	APH         int     `json:"aph"`
+	APH         float64 `json:"aph"`
 	APHSource   string  `json:"aph_source"`
 	Runs        int     `json:"runs"`
 	BuyCost     float64 `json:"buy_cost"`
@@ -139,7 +139,7 @@ type PathResult struct {
 	BuyCost        float64  `json:"buy_cost"`
 	SellRevenue    float64  `json:"sell_revenue"`
 	TaxPaid        float64  `json:"tax_paid"`
-	ActionsPerHour int      `json:"actions_per_hour"`
+	ActionsPerHour float64  `json:"actions_per_hour"`
 	APHSource      string   `json:"aph_source"`
 
 	// Complete is false when any input on the path had no price. The
@@ -473,7 +473,7 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 	}
 
 	aph, aphSource := e.chooseAPH(node.Recipe)
-	parentHours := 1.0 / float64(aph)
+	parentHours := 1.0 / aph
 
 	outQty := node.Recipe.OutputQty
 	if outQty < 1 {
@@ -557,7 +557,40 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 		pr.ROIPct = profit / buyCost * 100.0
 	}
 	pr.Throughput = e.throughput(bought, profit, totalHours)
+	if !finitePath(pr) {
+		return nil
+	}
 	return &pr
+}
+
+// finitePath reports whether every figure on a path is a real number.
+//
+// A path whose numbers are not finite is unpriceable, exactly as a path
+// with an unpriceable input is, and is dropped the same way. It is not
+// merely wrong to report: json.Marshal refuses a document containing an
+// infinity, gin records the render error and aborts, and the client
+// receives HTTP 200 with an empty body — the worst failure shape
+// available, because it looks like success to every client and logs as
+// success. The guard is here rather than at the one arithmetic that
+// produced it, so a future source of Inf or NaN cannot reopen the hole.
+func finitePath(p PathResult) bool {
+	figures := []float64{
+		p.ProfitPerCraft, p.GPPerHour, p.XPPerHour, p.GPPerXP, p.ROIPct,
+		p.TotalHours, p.TotalXP, p.BuyCost, p.SellRevenue, p.TaxPaid,
+		p.ActionsPerHour,
+	}
+	if p.Throughput != nil {
+		figures = append(figures, p.Throughput.CraftsPerHour, p.Throughput.GPPerHour)
+	}
+	for _, st := range p.Steps {
+		figures = append(figures, st.XP, st.APH, st.BuyCost, st.SellRevenue, st.Profit)
+	}
+	for _, v := range figures {
+		if math.IsInf(v, 0) || math.IsNaN(v) {
+			return false
+		}
+	}
+	return true
 }
 
 // throughput finds the input whose 4-hour buy limit binds hardest and
@@ -619,9 +652,9 @@ func (e *evaluator) guidePrice(itemID int64) (int64, bool) {
 // override beats everything, mechanics beat the infobox because the
 // infobox publishes the best case, and the house default is the last
 // resort it has always been.
-func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
+func (e *evaluator) chooseAPH(r models.Recipe) (float64, string) {
 	if e.opts.ActionsPerHourOverride > 0 {
-		return e.opts.ActionsPerHourOverride, models.APHSourceOverride
+		return float64(e.opts.ActionsPerHourOverride), models.APHSourceOverride
 	}
 
 	slots := rates.SlotsPerCraft(r.Inputs)
@@ -667,9 +700,9 @@ func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
 		if src == "" {
 			src = models.APHSourceDefault
 		}
-		return r.ActionsPerHour, src
+		return float64(r.ActionsPerHour), src
 	}
-	return e.market.DefaultActionsPerHour, models.APHSourceDefault
+	return float64(e.market.DefaultActionsPerHour), models.APHSourceDefault
 }
 
 // facilityMatches reports whether the scraped facility column names

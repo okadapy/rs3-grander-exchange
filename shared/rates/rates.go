@@ -138,11 +138,19 @@ func DefaultConfig() Config {
 // A craft consuming no slots — everything stacks — never forces a trip,
 // so it runs at the raw tick ceiling.
 //
+// The result is fractional because the quantity is: an Elder rune
+// platebody + 5 costs 80 bars and 10136 ticks, which is one item every
+// 1.7 hours. Computed by integer division that rate truncated to zero,
+// and a caller dividing by it got an infinity it could not serialise.
+// Rounding it up to one instead would have overstated the item's rate
+// by seventy percent, which is exactly the kind of invented number this
+// package exists to remove.
+//
 // Config must be fully initialized. Zero-valued or partially-filled Config
 // structs are detected and replaced with DefaultConfig(); this prevents
 // silently wrong rates from half-filled Configs (e.g., InventorySlots set
 // but BankTripTicks left at zero).
-func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int {
+func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) float64 {
 	if ticks <= 0 {
 		return 0
 	}
@@ -154,9 +162,14 @@ func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int {
 		cfg = DefaultConfig()
 	}
 	if slotsPerCraft <= 0 {
-		return ticksPerHour / ticks
+		return float64(ticksPerHour) / float64(ticks)
 	}
 
+	// A craft needing more slots than the inventory holds is charged one
+	// bank trip, not the several it really takes. That understates the
+	// time by 21 ticks out of 10157 on the largest craft in the game, and
+	// correcting it is a behaviour change for every oversized craft
+	// rather than part of this fix; it is recorded as follow-up work.
 	craftsPerTrip := cfg.InventorySlots / slotsPerCraft
 	if craftsPerTrip < 1 {
 		craftsPerTrip = 1
@@ -165,5 +178,5 @@ func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int {
 	if tripTicks <= 0 {
 		return 0
 	}
-	return craftsPerTrip * ticksPerHour / tripTicks
+	return float64(craftsPerTrip) * ticksPerHour / float64(tripTicks)
 }

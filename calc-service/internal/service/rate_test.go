@@ -39,7 +39,7 @@ func TestChooseAPHOverrideWins(t *testing.T) {
 
 	aph, src := e.chooseAPH(rec)
 	if aph != 1234 || src != models.APHSourceOverride {
-		t.Errorf("chooseAPH = %d, %q; want 1234, override", aph, src)
+		t.Errorf("chooseAPH = %v, %q; want 1234, override", aph, src)
 	}
 }
 
@@ -58,7 +58,7 @@ func TestChooseAPHSmeltingUsesTheLevelTable(t *testing.T) {
 	// Level 20 smelts steel in 5 ticks, not the infobox's 3.
 	want := rates.ActionsPerHour(5, 1, rates.DefaultConfig())
 	if aph != want {
-		t.Errorf("chooseAPH = %d, want %d (5 ticks at level 20)", aph, want)
+		t.Errorf("chooseAPH = %v, want %v (5 ticks at level 20)", aph, want)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestChooseAPHForgingSimulates(t *testing.T) {
 		t.Fatalf("aph_source = %q, want ticks_forge", src)
 	}
 	if aph <= 0 {
-		t.Errorf("chooseAPH = %d, want a positive rate", aph)
+		t.Errorf("chooseAPH = %v, want a positive rate", aph)
 	}
 }
 
@@ -90,7 +90,7 @@ func TestChooseAPHWithoutPlayerFallsBackToInfoboxTicks(t *testing.T) {
 		t.Fatalf("aph_source = %q, want ticks", src)
 	}
 	if want := rates.ActionsPerHour(3, 1, rates.DefaultConfig()); aph != want {
-		t.Errorf("chooseAPH = %d, want %d", aph, want)
+		t.Errorf("chooseAPH = %v, want %v", aph, want)
 	}
 }
 
@@ -103,7 +103,7 @@ func TestChooseAPHFallsBackToDefault(t *testing.T) {
 
 	aph, src := e.chooseAPH(rec)
 	if aph != 700 || src != models.APHSourceDefault {
-		t.Errorf("chooseAPH = %d, %q; want 700, default", aph, src)
+		t.Errorf("chooseAPH = %v, %q; want 700, default", aph, src)
 	}
 }
 

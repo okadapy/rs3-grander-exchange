@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -348,18 +350,18 @@ func TestChooseAPHPrecedence(t *testing.T) {
 
 	ev := &evaluator{market: Market{DefaultActionsPerHour: 600}}
 	if aph, src := ev.chooseAPH(r); aph != 250 || src != models.APHSourceWiki {
-		t.Errorf("recipe value = %d/%s, want 250/wiki", aph, src)
+		t.Errorf("recipe value = %v/%s, want 250/wiki", aph, src)
 	}
 
 	ev.opts.ActionsPerHourOverride = 900
 	if aph, src := ev.chooseAPH(r); aph != 900 || src != models.APHSourceOverride {
-		t.Errorf("override = %d/%s, want 900/override", aph, src)
+		t.Errorf("override = %v/%s, want 900/override", aph, src)
 	}
 
 	ev.opts.ActionsPerHourOverride = 0
 	r.ActionsPerHour = 0
 	if aph, src := ev.chooseAPH(r); aph != 600 || src != models.APHSourceDefault {
-		t.Errorf("fallback = %d/%s, want 600/default", aph, src)
+		t.Errorf("fallback = %v/%s, want 600/default", aph, src)
 	}
 }
 
@@ -594,4 +596,83 @@ func twoStepPath(t *testing.T, paths []PathResult) PathResult {
 	}
 	t.Fatal("expected a path that crafts the child rather than buying it")
 	return PathResult{}
+}
+
+// ---- finite figures ----
+
+// The real Elder rune platebody + 5: 80 bars at an anvil, for a player
+// who can forge them. ForgeTicks puts that at 10136 ticks, about 1.7
+// hours per item, so the honest rate is a fraction of one an hour.
+// Truncated to an integer it was zero, 1/aph was +Inf, json.Marshal
+// refused the document, and gin answered 200 with an empty body.
+func TestEightyBarForgeProducesAServeableResult(t *testing.T) {
+	node := &client.Node{
+		Recipe: models.Recipe{
+			Name:           "Elder rune platebody + 5",
+			OutputItemID:   45742,
+			OutputItemName: "Elder rune platebody + 5",
+			OutputQty:      1,
+			Skill:          "Smithing",
+			LevelReq:       90,
+			XPPerAction:    80_000,
+			Facility:       "Anvil",
+			Inputs:         []models.RecipeInput{input(44830, "Elder rune bar", 80)},
+		},
+	}
+	ev := &evaluator{
+		market: MarketFrom(marketConfForTest()),
+		prices: snapshots(map[int64]int64{45742: 50_000_000, 44830: 40_000}),
+		opts:   Options{Player: "Zezima"},
+		levels: map[string]int{"smithing": 90, "firemaking": 90},
+	}
+
+	paths := ev.expand(node)
+	if len(paths) != 1 {
+		t.Fatalf("got %d paths, want the single all-buy path", len(paths))
+	}
+	p := paths[0]
+
+	if p.ActionsPerHour <= 0 {
+		t.Fatalf("actions per hour = %v, want the fractional rate 80 bars really run at",
+			p.ActionsPerHour)
+	}
+	if p.TotalHours < 1.5 || p.TotalHours > 2 {
+		t.Errorf("total hours = %v, want ~1.7 for an 80-bar item", p.TotalHours)
+	}
+	if _, err := json.Marshal(p); err != nil {
+		t.Fatalf("path does not serialise: %v", err)
+	}
+}
+
+// Defence in depth for the same failure shape, independent of the
+// arithmetic above: whatever produces it, a figure that is not finite
+// must never reach the serialiser. A silent zero-byte 200 looks like
+// success to every client and logs as success. Here the rate is zero
+// because the house default was never configured — a different source
+// of +Inf from the one the 80-bar case had.
+func TestPathWithNonFiniteFiguresNeverReachesTheSerialiser(t *testing.T) {
+	node := &client.Node{
+		Recipe: recipe("Widget", 100, 1, "Crafting", 10, 20, 0, input(200, "Thing", 1)),
+	}
+	ev := &evaluator{
+		market: Market{DefaultActionsPerHour: 0},
+		prices: snapshots(map[int64]int64{100: 1000, 200: 10}),
+	}
+
+	for _, p := range ev.expand(node) {
+		for label, v := range map[string]float64{
+			"profit_per_craft": p.ProfitPerCraft, "gp_per_hour": p.GPPerHour,
+			"xp_per_hour": p.XPPerHour, "gp_per_xp": p.GPPerXP,
+			"roi_pct": p.ROIPct, "total_hours": p.TotalHours,
+			"total_xp": p.TotalXP, "buy_cost": p.BuyCost,
+			"sell_revenue": p.SellRevenue, "tax_paid": p.TaxPaid,
+		} {
+			if math.IsInf(v, 0) || math.IsNaN(v) {
+				t.Errorf("%s = %v on a path handed to the client", label, v)
+			}
+		}
+		if _, err := json.Marshal(p); err != nil {
+			t.Fatalf("path does not serialise: %v", err)
+		}
+	}
 }

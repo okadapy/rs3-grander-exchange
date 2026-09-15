@@ -1518,7 +1518,11 @@ components:
           type: number
           format: double
         aph:
-          type: integer
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
         aph_source:
           $ref: '#/components/schemas/AphSource'
         runs:
@@ -1598,7 +1602,11 @@ components:
           type: number
           format: double
         actions_per_hour:
-          type: integer
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
         aph_source:
           $ref: '#/components/schemas/AphSource'
         complete:
@@ -1724,7 +1732,11 @@ components:
           type: number
           format: double
         actions_per_hour:
-          type: integer
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
         aph_source:
           $ref: '#/components/schemas/AphSource'
         complete:

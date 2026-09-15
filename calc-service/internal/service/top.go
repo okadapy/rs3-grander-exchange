@@ -63,7 +63,7 @@ type TopRow struct {
 	// otherwise.
 	GPPerHourLimited float64 `json:"gp_per_hour_limited"`
 	GPPerXP          float64 `json:"gp_per_xp"`
-	ActionsPerHour   int     `json:"actions_per_hour"`
+	ActionsPerHour   float64 `json:"actions_per_hour"`
 	APHSource        string  `json:"aph_source"`
 	Complete         bool    `json:"complete"`
 	BindingItemName  string  `json:"binding_item_name,omitempty"`
