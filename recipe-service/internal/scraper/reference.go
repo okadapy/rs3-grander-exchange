@@ -120,21 +120,13 @@ func FetchGEIDs(repo *repository.Repo, log *zap.Logger) error {
 	}
 	log.Info("stored GEIDs map", zap.Int("rows", len(rows)))
 
-	// Outputs first: a recipe whose own output ID is unknown is invisible
-	// to the price poller and to every listing endpoint, which silently
-	// shrinks the catalogue. Resolving outputs also gives the input pass
-	// more names to match against.
-	if n, err := repo.BackfillOutputsFromGEIDs(); err != nil {
-		return fmt.Errorf("backfill outputs: %w", err)
-	} else {
-		log.Info("resolved recipe outputs from GEIDs", zap.Int64("rows", n))
+	// A fresh map can resolve names that were unknown yesterday, so run
+	// the full sequence rather than only the two passes that read the
+	// map directly — a newly resolved output is a name the
+	// inputs-from-recipes pass could not match before.
+	if _, err := ResolveIDs(repo, log); err != nil {
+		return err
 	}
-
-	n, err := repo.BackfillInputsFromGEIDs()
-	if err != nil {
-		return fmt.Errorf("backfill inputs: %w", err)
-	}
-	log.Info("resolved recipe inputs from GEIDs", zap.Int64("rows", n))
 	return nil
 }
 

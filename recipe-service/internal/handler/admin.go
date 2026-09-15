@@ -16,16 +16,18 @@ import (
 // Admin exposes ops endpoints for local debugging. Not routed through
 // the gateway — only reachable on the recipe-service port directly.
 type Admin struct {
-	scraper *scraper.Scraper
-	log     *zap.Logger
-	http    *http.Client
+	scraper  scraper.ScrapeRunner
+	resolver scraper.IDResolver
+	log      *zap.Logger
+	http     *http.Client
 }
 
-func NewAdmin(s *scraper.Scraper, log *zap.Logger) *Admin {
+func NewAdmin(s scraper.ScrapeRunner, r scraper.IDResolver, log *zap.Logger) *Admin {
 	return &Admin{
-		scraper: s,
-		log:     log,
-		http:    &http.Client{Timeout: 60 * time.Second},
+		scraper:  s,
+		resolver: r,
+		log:      log,
+		http:     &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -36,12 +38,16 @@ func (a *Admin) Register(r *gin.Engine) {
 
 func (a *Admin) triggerScrape(c *gin.Context) {
 	go func() {
-		n, err := a.scraper.ScrapeAll()
+		// The same cycle the background loop runs: a scrape on its
+		// own would leave every input's item ID cleared.
+		n, res, err := scraper.RunScrapeCycle(a.scraper, a.resolver, a.log)
 		if err != nil {
 			a.log.Error("manual scrape failed", zap.Error(err))
 			return
 		}
-		a.log.Info("manual scrape done", zap.Int("upserted", n))
+		a.log.Info("manual scrape done",
+			zap.Int("upserted", n),
+			zap.Int64("inputs_resolved", res.InputsFromRecipes+res.InputsFromGEIDs))
 	}()
 	c.JSON(http.StatusAccepted, gin.H{"status": "scrape started"})
 }

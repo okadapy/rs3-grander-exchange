@@ -49,17 +49,13 @@ func main() {
 		log.Fatal("migrate", zap.Error(err))
 	}
 
-	// Backfill input item IDs from matching output names.
-	// Anything craftable (bars, planks, leathers) gets its ID
-	// resolved this way so the price poller can fetch its cost.
-	if n, err := repo.BackfillInputItemIDs(); err != nil {
-		log.Warn("backfill input ids", zap.Error(err))
-	} else if n > 0 {
-		log.Info("backfilled input item ids", zap.Int64("rows", n))
+	// Resolve whatever the last run left unresolved, from the item ID
+	// map already in the database. Cheap, and it means a restart does
+	// not have to wait on the wiki before the catalogue is usable.
+	if _, err := scraper.ResolveIDs(repo, log); err != nil {
+		log.Warn("resolve item ids", zap.Error(err))
 	}
-	// Fetch the wiki GE item ID map and resolve raw-material
-	// inputs that BackfillInputItemIDs couldn't handle. Runs once
-	// at startup; the scraper loop refreshes it daily.
+
 	// Reference data refresh: GE item IDs first, then buy limits (which
 	// are keyed by name and need the ID map to become useful). Both are
 	// cheap single-file downloads, so this reruns daily rather than only
@@ -100,7 +96,11 @@ func main() {
 		time.Sleep(5 * time.Second)
 		backoff := 30 * time.Second
 		for {
-			n, err := sc.ScrapeAll()
+			// Resolution is part of the cycle, not a separate
+			// daily job: the scrape clears every input's item ID
+			// on its way through, so whatever ran this morning is
+			// gone the moment a scrape finishes.
+			n, _, err := scraper.RunScrapeCycle(sc, repo, log)
 			if err == nil && n > 0 {
 				log.Info("scrape successful, sleeping 24h",
 					zap.Int("upserted", n))
@@ -135,7 +135,7 @@ func main() {
 
 	// Admin routes live on the same engine, registered after the
 	// public handler so their /internal/* paths don't collide.
-	admin := handler.NewAdmin(sc, log)
+	admin := handler.NewAdmin(sc, repo, log)
 	admin.Register(r)
 
 	srv := &http.Server{Addr: ":" + itoa(cfg.Port), Handler: r}
