@@ -760,3 +760,97 @@ func TestParetoPruneNeverLetsAnIncompletePathBeatAPricedOne(t *testing.T) {
 			"cost is only lower because an input had no price")
 	}
 }
+
+// The step's buy_cost alone says a bar cost something to make; it does
+// not say the bar was made of copper and tin. A caller walking a tree
+// is asking what the thing is made of, so every ingredient is named,
+// counted and priced — including the ones that have no price.
+func TestStepNamesAndPricesEveryIngredient(t *testing.T) {
+	node := &client.Node{
+		Recipe: recipe("Bronze bar", 100, 1, "Smithing", 1, 1, 100,
+			input(200, "Copper ore", 1),
+			input(201, "Tin ore", 1),
+			input(0, "Nature rune", 2),
+		),
+	}
+	prices := snapshots(map[int64]int64{100: 1000, 200: 700, 201: 800})
+
+	got := (&evaluator{market: Market{DefaultActionsPerHour: 600}, prices: prices}).expand(node)[0]
+	step := got.Steps[len(got.Steps)-1]
+
+	if len(step.Inputs) != 3 {
+		t.Fatalf("step lists %d inputs, want all 3 — an unpriced one is still "+
+			"an ingredient and hiding it is what made a cooked dish look like "+
+			"a thing bought ready-made", len(step.Inputs))
+	}
+	byName := map[string]StepInput{}
+	for _, in := range step.Inputs {
+		byName[in.Name] = in
+	}
+
+	copper := byName["Copper ore"]
+	if !copper.Priced || copper.UnitPrice != 700 || copper.Cost != 700 {
+		t.Errorf("Copper ore = %+v, want priced at 700", copper)
+	}
+	if tin := byName["Tin ore"]; tin.Quantity != 1 || tin.Cost != 800 {
+		t.Errorf("Tin ore = %+v, want one at 800", tin)
+	}
+	rune := byName["Nature rune"]
+	if rune.Priced || rune.Cost != 0 {
+		t.Errorf("Nature rune = %+v, want listed but unpriced at zero cost", rune)
+	}
+	if rune.Quantity != 2 {
+		t.Errorf("Nature rune quantity = %d, want 2 even without a price", rune.Quantity)
+	}
+}
+
+// A crafted input is produced by a step of its own, which carries its
+// cost. Repeating the cost here would double-count the whole subtree.
+func TestCraftedInputIsMarkedAndCostsNothingTwice(t *testing.T) {
+	child := &client.Node{
+		Recipe: recipe("Bronze bar", 200, 1, "Smithing", 1, 1, 100,
+			input(300, "Copper ore", 1),
+		),
+	}
+	node := &client.Node{
+		Recipe: recipe("Bronze full helm", 100, 1, "Smithing", 1, 30, 100,
+			input(200, "Bronze bar", 2),
+		),
+		Children: []*client.Node{child},
+	}
+	prices := snapshots(map[int64]int64{100: 5000, 200: 400, 300: 150})
+
+	paths := (&evaluator{market: Market{DefaultActionsPerHour: 600}, prices: prices}).expand(node)
+	var crafting *PathResult
+	for i := range paths {
+		if len(paths[i].Steps) == 2 {
+			crafting = &paths[i]
+		}
+	}
+	if crafting == nil {
+		t.Fatal("no path crafts the bar")
+	}
+
+	helm := crafting.Steps[len(crafting.Steps)-1]
+	if len(helm.Inputs) != 1 {
+		t.Fatalf("helm lists %d inputs, want 1", len(helm.Inputs))
+	}
+	bar := helm.Inputs[0]
+	if !bar.Crafted {
+		t.Error("the bar is produced by a step of this path and must say so")
+	}
+	if bar.Cost != 0 {
+		t.Errorf("crafted input cost = %v, want 0 — its cost belongs to its "+
+			"own step and counting it here would double the subtree", bar.Cost)
+	}
+
+	// Two bars are made, so the copper consumed doubles with them.
+	barStep := crafting.Steps[0]
+	if got := barStep.Inputs[0].Quantity; got != 2 {
+		t.Errorf("copper quantity = %d, want 2 — the ingredient list has to "+
+			"scale with runs the same way the cost does", got)
+	}
+	if got := barStep.Inputs[0].Cost; got != 300 {
+		t.Errorf("copper cost = %v, want 300", got)
+	}
+}
