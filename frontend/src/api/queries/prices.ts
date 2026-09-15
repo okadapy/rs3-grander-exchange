@@ -7,10 +7,11 @@ import type { components } from '../schema';
 export type PriceSnapshot = components['schemas']['PriceSnapshot'];
 export type LiquidityStats = components['schemas']['LiquidityStats'];
 
-export function useLatestPrices(ids: number[]) {
+export function useLatestPrices(ids: number[], opts?: { pollMs?: number }) {
   return useQuery({
     queryKey: queryKeys.latestPrices(ids),
     enabled: ids.length > 0,
+    refetchInterval: opts?.pollMs ?? false,
     queryFn: async (): Promise<Map<number, PriceSnapshot>> => {
       const { data, error, response } = await api.GET('/prices/latest', {
         params: { query: { ids: ids.join(',') } },

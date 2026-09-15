@@ -6,11 +6,13 @@ import { useCalcBatch } from '../../api/queries/calc';
 import { useLatestPrices, useLiquidityStats } from '../../api/queries/prices';
 import { usePriceableItemIds, useSkillRecipes } from '../../api/queries/recipes';
 import { usePlayerPrefs } from '../character/usePlayerPrefs';
+import { useWs } from '../../ws/WsProvider';
 import { AssumptionsBar } from './AssumptionsBar';
 import { RecipeFilters } from './RecipeFilters';
 import type { FiltersValue } from './RecipeFilters';
 import { buildRows, firstAssumptions } from './buildRows';
 import { recipeColumns } from './columns';
+import { useLivePrices } from './useLivePrices';
 
 const PAGE_SIZE = 25;
 
@@ -81,8 +83,10 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
     spreadPct: filters.spreadPct,
     includeIncomplete: filters.includeIncomplete,
   });
-  const prices = useLatestPrices(pageIds);
+  const { status } = useWs();
+  const prices = useLatestPrices(pageIds, { pollMs: status === 'open' ? undefined : 30_000 });
   const stats = useLiquidityStats(pageIds);
+  const live = useLivePrices(pageIds);
 
   const rows = useMemo(
     () =>
@@ -116,6 +120,31 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
       )}
 
       <AssumptionsBar assumptions={assumptions} />
+
+      {status !== 'open' && (
+        <Alert severity="info" variant="outlined">
+          Live prices require a signed-in token. Sign in from the chat to receive them instantly;
+          otherwise prices refresh every 30 seconds.
+        </Alert>
+      )}
+
+      {live.staleItemIds.size > 0 && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          action={
+            <Button
+              size="small"
+              onClick={() => { live.clearStale(); void calc.refetch(); }}
+            >
+              Recalculate
+            </Button>
+          }
+        >
+          Prices changed for {live.staleItemIds.size} item(s). Margins are computed server-side,
+          so they must be recalculated rather than re-derived in the browser.
+        </Alert>
+      )}
 
       {filters.includeIncomplete && (
         <Alert severity="warning" variant="outlined">
