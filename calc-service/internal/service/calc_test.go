@@ -716,3 +716,47 @@ func TestOrderByBuyCostIsDeterministicOnTies(t *testing.T) {
 		}
 	}
 }
+
+// A child reaches its parent through three numbers only: what it costs,
+// how long it takes and what experience it yields. A path beaten on all
+// three at once cannot improve any parent, under any metric, at any
+// depth — so dropping it is a proof rather than a budget.
+func TestParetoPruneDropsOnlyBeatenPaths(t *testing.T) {
+	cheapSlow := PathResult{BuyCost: 100, TotalHours: 9, TotalXP: 5, Complete: true}
+	dearFast := PathResult{BuyCost: 900, TotalHours: 1, TotalXP: 5, Complete: true}
+	beaten := PathResult{BuyCost: 950, TotalHours: 9, TotalXP: 4, Complete: true}
+
+	kept := paretoPrune([]PathResult{cheapSlow, dearFast, beaten})
+	if len(kept) != 2 {
+		t.Fatalf("kept %d paths, want 2 — the two that trade cost against "+
+			"time are both still winnable, only the third is beaten outright", len(kept))
+	}
+	for _, p := range kept {
+		if p.BuyCost == beaten.BuyCost && p.TotalHours == beaten.TotalHours {
+			t.Error("kept a path beaten on cost, time and experience at once")
+		}
+	}
+}
+
+// An incomplete path has an unpriced input costed at zero, so its
+// BuyCost is understated. Compared against a fully priced path it would
+// look cheaper than anything and discard the real answer.
+func TestParetoPruneNeverLetsAnIncompletePathBeatAPricedOne(t *testing.T) {
+	priced := PathResult{BuyCost: 500, TotalHours: 2, TotalXP: 10, Complete: true}
+	understated := PathResult{BuyCost: 0, TotalHours: 1, TotalXP: 20, Complete: false}
+
+	kept := paretoPrune([]PathResult{priced, understated})
+	if len(kept) != 2 {
+		t.Fatalf("kept %d paths, want both", len(kept))
+	}
+	var sawPriced bool
+	for _, p := range kept {
+		if p.Complete {
+			sawPriced = true
+		}
+	}
+	if !sawPriced {
+		t.Error("the fully priced path was dropped in favour of one whose " +
+			"cost is only lower because an input had no price")
+	}
+}
