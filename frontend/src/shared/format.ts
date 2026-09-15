@@ -1,4 +1,6 @@
-const ABSENT = '—';
+// Every column that cannot show a number shows this, and only this: a zero
+// in a money column would read as a real (and wrong) answer.
+export const ABSENT = '—';
 
 function isAbsent(value: number | null | undefined): value is null | undefined {
   return value === null || value === undefined || Number.isNaN(value);

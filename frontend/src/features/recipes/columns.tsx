@@ -2,7 +2,7 @@ import { Chip, Stack, Tooltip, Typography } from '@mui/material';
 import type { GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ItemIcon } from '../../shared/ItemIcon';
 import { SkillIcon } from '../../shared/SkillIcon';
-import { formatCompact, formatInt, formatPct } from '../../shared/format';
+import { ABSENT, formatCompact, formatInt, formatPct } from '../../shared/format';
 import type { RecipeRow, RowCaveat } from './buildRows';
 
 const CAVEAT_TITLES: Record<RowCaveat, string> = {
@@ -17,15 +17,51 @@ const CAVEAT_LABELS: Record<RowCaveat, string> = {
   'no-throughput': 'uncapped',
 };
 
-// The reason for an unpriceable row is stated once, in the item column.
-// Money columns render an em dash so the row never reads as a zero margin.
-function Money({ row, value }: { row: RecipeRow; value: number | null }) {
-  if (row.error) return <Typography variant="body2" color="text.secondary">—</Typography>;
+// The reason for an unpriceable row is stated once, in the item column, so
+// every value column here renders an em dash instead and the row never reads
+// as a zero margin. Both cell components share the same dimming, so an
+// incomplete path can never show a greyed-out margin next to a
+// full-contrast ROI derived from the very same path.
+function dimming(row: RecipeRow) {
+  return { opacity: row.caveats.includes('incomplete') ? 0.55 : 1 };
+}
 
-  const dim = row.caveats.includes('incomplete');
+function Absent() {
+  return <Typography variant="body2" color="text.secondary">{ABSENT}</Typography>;
+}
+
+function Money({
+  row,
+  value,
+  signed = false,
+}: {
+  row: RecipeRow;
+  value: number | null;
+  signed?: boolean;
+}) {
+  if (row.error) return <Absent />;
+
+  const color = !signed
+    ? undefined
+    : value === null
+      ? 'text.secondary'
+      : value >= 0
+        ? 'success.main'
+        : 'error.main';
+
   return (
-    <Typography variant="body2" sx={{ opacity: dim ? 0.55 : 1 }}>
+    <Typography variant="body2" color={color} sx={dimming(row)}>
       {formatCompact(value)}
+    </Typography>
+  );
+}
+
+function Pct({ row, value }: { row: RecipeRow; value: number | null }) {
+  if (row.error) return <Absent />;
+
+  return (
+    <Typography variant="body2" sx={dimming(row)}>
+      {formatPct(value)}
     </Typography>
   );
 }
@@ -108,12 +144,9 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
             : ''
         }
       >
-        <Typography
-          variant="body2"
-          color={p.row.margin === null ? 'text.secondary' : p.row.margin >= 0 ? 'success.main' : 'error.main'}
-        >
-          {p.row.error ? '—' : formatCompact(p.row.margin)}
-        </Typography>
+        <span>
+          <Money row={p.row} value={p.row.margin} signed />
+        </span>
       </Tooltip>
     ),
   },
@@ -122,7 +155,7 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     headerName: 'ROI',
     width: 100,
     renderCell: (p: GridRenderCellParams<RecipeRow, number>) => (
-      <Typography variant="body2">{p.row.error ? '—' : formatPct(p.row.roiPct)}</Typography>
+      <Pct row={p.row} value={p.row.roiPct} />
     ),
   },
   {
@@ -149,9 +182,9 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     width: 150,
     renderCell: (p: GridRenderCellParams<RecipeRow, number>) => (
       <Tooltip title={p.row.bindingItemName ? `Binding input: ${p.row.bindingItemName}` : 'Buy limit unknown'}>
-        <Typography variant="body2">
-          {p.row.error ? '—' : formatCompact(p.row.throughputGpPerHour)}
-        </Typography>
+        <span>
+          <Money row={p.row} value={p.row.throughputGpPerHour} />
+        </span>
       </Tooltip>
     ),
   },

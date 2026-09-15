@@ -111,6 +111,21 @@ it('states the reason instead of a zero margin when the server could not price t
   const row = await screen.findByRole('row', { name: /Ruby/ });
   expect(within(row).getByText(/no priceable production path/)).toBeInTheDocument();
   expect(within(row).queryByText('0')).not.toBeInTheDocument();
+  // Price, components, margin, ROI, xp/h, gp/xp, gp/h and gp/h capped all
+  // state the absence the same way instead of inventing a number.
+  expect(within(row).getAllByText('\u2014')).toHaveLength(8);
+});
+
+it('dims every money column alike when the path is incomplete', async () => {
+  backend({
+    calcEntry: batchEntry({ result: result({ paths: [path({ complete: false })] }) }),
+  });
+  await chooseCrafting();
+
+  const row = await screen.findByRole('row', { name: /Ruby/ });
+  for (const value of ['301', '12.5%', '301K', '752.5K']) {
+    expect(within(row).getByText(value)).toHaveStyle({ opacity: '0.55' });
+  }
 });
 
 it('shows every craft when no skill is selected', async () => {
