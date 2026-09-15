@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, expect, it } from 'vitest';
@@ -122,6 +122,36 @@ it('does not echo the sent message until the server returns it', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Send' }));
 
   expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
+});
+
+it('does not send a message via Enter while the socket is not open', async () => {
+  signedIn();
+  renderWithProviders(<ChatPopup />, { socketFactory: (url) => new FakeSocket(url) });
+  await expandPopup();
+
+  await screen.findByText('Hey!');
+  act(() => {
+    FakeSocket.last?.onopen?.();
+  });
+
+  const field = screen.getByLabelText('Message');
+  await userEvent.type(field, 'Held back');
+
+  // The connection drops (rejected token) after the text was typed but
+  // before it was submitted; the composer becomes disabled as a result.
+  act(() => {
+    FakeSocket.last?.onclose?.({ code: 1008 });
+  });
+  expect(field).toBeDisabled();
+
+  // Dispatched directly rather than through userEvent, because a disabled
+  // input cannot be focused/typed into via userEvent in the first place —
+  // this exercises submit()'s own guard, not the browser's disabled
+  // handling, which is exactly what the fix is meant to cover.
+  fireEvent.keyDown(field, { key: 'Enter' });
+
+  expect(FakeSocket.last?.sent).toEqual([]);
+  expect(field).toHaveValue('Held back');
 });
 
 it('reports a rejected token with a sign-out action, without signing out automatically', async () => {

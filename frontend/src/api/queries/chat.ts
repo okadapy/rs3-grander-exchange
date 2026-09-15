@@ -6,9 +6,10 @@ import type { components } from '../schema';
 
 export type ChatMessage = components['schemas']['ChatMessage'];
 
-export function useChatHistory() {
+export function useChatHistory(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.chatHistory(),
+    enabled: opts?.enabled ?? true,
     queryFn: async (): Promise<ChatMessage[]> => {
       const { data, error, response } = await api.GET('/chat/history', {
         params: { query: { limit: 50 } },

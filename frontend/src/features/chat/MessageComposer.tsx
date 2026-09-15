@@ -10,6 +10,7 @@ export function MessageComposer({ disabled, onSend }: Props) {
   const [body, setBody] = useState('');
 
   function submit() {
+    if (disabled) return;
     const trimmed = body.trim();
     if (trimmed.length === 0) return;
     onSend(trimmed);
@@ -22,6 +23,7 @@ export function MessageComposer({ disabled, onSend }: Props) {
         label="Message"
         size="small"
         fullWidth
+        disabled={disabled}
         // The server caps the body at 500 characters.
         slotProps={{ htmlInput: { maxLength: 500 } }}
         value={body}
