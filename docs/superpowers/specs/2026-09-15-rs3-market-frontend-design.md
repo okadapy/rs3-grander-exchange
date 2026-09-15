@@ -65,17 +65,33 @@ v2.0.0. Присутствуют и отвечают ожидаемыми фор
 Всё крутится в Docker, потому что на хосте Node 18.19.1, а актуальный
 тулчейн требует Node 20+.
 
-- Контейнер `node:22-alpine`, отдельный `docker-compose.yml` в этом
-  репозитории. Vite dev server на 5173, биндится на `0.0.0.0`.
-  В сеть бэкенда контейнер не входит: запросы к API уходят из браузера
-  на хосте прямо на `http://localhost:8080`.
-- Vite 7, React 18, TypeScript в `strict`.
-- `openapi-typescript` — генерация типов из `combined.yaml`,
-  `openapi-fetch` — типизированный клиент поверх них.
-- TanStack Query — кэш, дедупликация, инвалидация.
-- MUI v6 и MUI X DataGrid (Community) — тема и таблица.
-- React Router v6 — три маршрута.
-- Vitest, Testing Library, MSW — тесты.
+- Контейнер `node:22-alpine` (Node 22.23.2), отдельный
+  `docker-compose.yml` в этом репозитории. Vite dev server на 5173,
+  биндится на `0.0.0.0`. В сеть бэкенда контейнер не входит: запросы
+  к API уходят из браузера на хосте прямо на `http://localhost:8080`.
+
+Версии сверены с реестром npm 2026-09-15:
+
+| Пакет | Версия |
+|---|---|
+| vite | 8.3.0 |
+| @vitejs/plugin-react | 6.1.1 |
+| typescript | 7.0.2 |
+| react, react-dom | 19.3.0 |
+| @mui/material | 9.4.0 |
+| @mui/x-data-grid | 9.13.0 |
+| @emotion/react, @emotion/styled | 11.14.0, 11.14.1 |
+| @tanstack/react-query | 5.102.8 |
+| react-router-dom | 7.18.3 |
+| openapi-typescript | 7.13.0 |
+| openapi-fetch | 0.17.0 |
+| vitest | 5.0.1 |
+| jsdom | 30.0.1 |
+| msw | 2.15.0 |
+| @testing-library/react | 16.3.3 |
+
+Vite 8 требует Node >= 22.12, vitest 5 — Node ^22.12; образ подходит.
+TypeScript в `strict`.
 
 Все команды выполняются внутри контейнера:
 `docker compose run --rm frontend <команда>`.
