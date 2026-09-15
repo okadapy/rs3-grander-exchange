@@ -49,6 +49,17 @@ returns a liquidity `score` and `tier` built from traded volume, how
 recently the price moved, and how often it moves. Check `observations`
 to see how much data the score rests on.
 
+**Ranking the catalogue is a route, not a client-side loop.**
+`GET /calc/top?metric=gp_per_hour` walks every priceable recipe —
+around 5800 of them — and returns the best path for each, sorted by
+one metric. `metric` is required (`xp_per_hour`, `gp_per_hour` or
+`gp_per_xp`) and has no default: asking for a ranking without saying of
+what is a mistake worth a 400, not a guess. `metric=gp_per_hour` sorts
+on `gp_per_hour_limited`, the same throughput-bound rate described
+above — sorting on the raw `gp_per_hour` would put a godsword nobody
+forges six hundred times an hour above the things people actually
+craft.
+
 Two smaller honesty flags:
 
 - `CalcPath.complete` — `false` means an input had no price and was

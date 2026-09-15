@@ -157,10 +157,7 @@ type Result struct {
 }
 
 func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*Result, error) {
-	market := s.market
-	if opts.SpreadPctOverride != nil && *opts.SpreadPctOverride >= 0 {
-		market.SpreadPct = *opts.SpreadPctOverride
-	}
+	market := s.resolveMarket(opts)
 
 	key := cacheKey(itemID, opts, market)
 	var cached Result
@@ -227,21 +224,41 @@ func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*R
 		ItemID:      itemID,
 		GeneratedAt: time.Now().UTC(),
 		Paths:       paths,
-		Assumptions: Assumptions{
-			PriceBasis:     PriceBasis,
-			SpreadPct:      market.SpreadPct,
-			TaxPct:         market.TaxPct,
-			TaxCapPerItem:  market.TaxCapPerItem,
-			TaxExemptBelow: market.TaxExemptBelow,
-			Player:         opts.Player,
-			Mode:           opts.Mode,
-			InventorySlots: market.InventorySlots,
-			BankTripTicks:  market.BankTripTicks,
-			Boosts:         opts.BoostsRaw,
-		},
+		Assumptions: assumptionsFor(market, opts),
 	}
 	s.cc.Set(key, res)
 	return res, nil
+}
+
+// resolveMarket applies a caller's spread override, if any, on top of
+// the server's configured market assumptions. Factored out of Calculate
+// so Top can build the same Assumptions block without evaluating an
+// item first.
+func (s *Service) resolveMarket(opts Options) Market {
+	market := s.market
+	if opts.SpreadPctOverride != nil && *opts.SpreadPctOverride >= 0 {
+		market.SpreadPct = *opts.SpreadPctOverride
+	}
+	return market
+}
+
+// assumptionsFor builds the response's Assumptions block from the
+// resolved market and the caller's options alone — it depends on
+// neither an item nor its price data, so it is exactly the same for
+// every item evaluated under the same options.
+func assumptionsFor(market Market, opts Options) Assumptions {
+	return Assumptions{
+		PriceBasis:     PriceBasis,
+		SpreadPct:      market.SpreadPct,
+		TaxPct:         market.TaxPct,
+		TaxCapPerItem:  market.TaxCapPerItem,
+		TaxExemptBelow: market.TaxExemptBelow,
+		Player:         opts.Player,
+		Mode:           opts.Mode,
+		InventorySlots: market.InventorySlots,
+		BankTripTicks:  market.BankTripTicks,
+		Boosts:         opts.BoostsRaw,
+	}
 }
 
 func (s *Service) playerLevels(ctx context.Context, name, mode string) (map[string]int, error) {

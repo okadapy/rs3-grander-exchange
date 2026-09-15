@@ -85,6 +85,34 @@ func (c *RecipeClient) BuyLimits(ctx context.Context, ids []int64) (map[int64]in
 	return out, nil
 }
 
+// AllItemIDs returns the output item ID of every recipe in the
+// catalogue. /calc/top walks this whole set to rank the catalogue by a
+// headline metric.
+func (c *RecipeClient) AllItemIDs(ctx context.Context) ([]int64, error) {
+	u := c.Base + "/recipes/ids"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("recipe svc %d: %s", resp.StatusCode, string(b))
+	}
+
+	var payload struct {
+		ItemIDs []int64 `json:"item_ids"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload.ItemIDs, nil
+}
+
 type TreeResp struct {
 	Root *Node `json:"root"`
 }

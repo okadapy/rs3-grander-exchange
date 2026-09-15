@@ -537,6 +537,77 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /calc/top:
+    get:
+      tags: [calc]
+      operationId: calculateTop
+      summary: The catalogue ranked by one headline metric
+      description: |
+        Walks every priceable recipe — around 5800 of them — and returns
+        the best path for each, ranked by `metric`. Answers from cache
+        on anything but the first call for a given parameter set.
+
+        `metric` is required; there is no default, because asking for a
+        ranking without saying of what is a mistake worth reporting
+        rather than guessing at.
+
+        `gp_per_hour` ranks on `gp_per_hour_limited`, the buy-limit-bound
+        rate, not the raw `gp_per_hour`. The raw figure multiplies one
+        craft's profit by a full hour of actions, which floats items
+        nobody can produce at that rate — a godsword nobody forges six
+        hundred times an hour — above the things people actually craft.
+
+        An item whose calculation fails (no priceable path, upstream
+        error) is simply absent from the ranking rather than failing the
+        whole request, the same reasoning `/calc/batch` uses to report
+        failures per entry.
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          description: What to rank by. No default.
+          schema:
+            $ref: '#/components/schemas/TopMetric'
+        - name: player
+          in: query
+          description: |
+            RS3 display name. When supplied, actions-per-hour for
+            Smithing recipes is derived from this player's levels where
+            the mechanics allow it.
+          schema:
+            type: string
+        - name: skill
+          in: query
+          description: Restrict the ranking to recipes of this skill.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Rows to return. Defaults to 20, capped at 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: include_incomplete
+          in: query
+          description: |
+            Include paths with an input we could not price. Their money
+            figures are upper bounds, so they are excluded by default.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/CalcBoosts'
+      responses:
+        '200':
+          description: The catalogue ranked by `metric`, best first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /hiscore/{name}:
     get:
       tags: [hiscore]
@@ -1561,6 +1632,88 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CalcBatchEntry'
+
+    TopMetric:
+      type: string
+      description: What /calc/top ranks by. No default — it is required.
+      enum: [xp_per_hour, gp_per_hour, gp_per_xp]
+
+    TopRow:
+      type: object
+      description: The best production path for one item, under one metric.
+      required:
+        - item_id
+        - name
+        - skill
+        - level_req
+        - xp_per_hour
+        - gp_per_hour
+        - gp_per_hour_limited
+        - gp_per_xp
+        - actions_per_hour
+        - aph_source
+        - complete
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        skill:
+          type: string
+        level_req:
+          type: integer
+        xp_per_hour:
+          type: number
+          format: double
+        gp_per_hour:
+          type: number
+          format: double
+          description: |
+            Unconstrained rate. `gp_per_hour` ranks on
+            `gp_per_hour_limited` instead — prefer that field.
+        gp_per_hour_limited:
+          type: number
+          format: double
+          description: |
+            `gp_per_hour` capped by the binding input's Grand Exchange
+            buy limit where one is known, equal to `gp_per_hour`
+            otherwise. This is the field `metric=gp_per_hour` sorts on.
+        gp_per_xp:
+          type: number
+          format: double
+        actions_per_hour:
+          type: integer
+        aph_source:
+          $ref: '#/components/schemas/AphSource'
+        complete:
+          type: boolean
+          description: |
+            False means an input had no price and was costed at zero.
+            Only ever false when `include_incomplete=true` was passed.
+        binding_item_name:
+          type: string
+          description: |
+            The bought input whose buy limit produced
+            `gp_per_hour_limited`. Absent when no bought input has a
+            known buy limit.
+
+    TopResponse:
+      type: object
+      required: [metric, count, rows, assumptions]
+      properties:
+        metric:
+          $ref: '#/components/schemas/TopMetric'
+        count:
+          type: integer
+          description: Number of rows returned (at most `limit`).
+        rows:
+          type: array
+          description: Best first, by `metric`.
+          items:
+            $ref: '#/components/schemas/TopRow'
+        assumptions:
+          $ref: '#/components/schemas/CalcAssumptions'
 
     Credentials:
       type: object

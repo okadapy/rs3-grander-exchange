@@ -122,6 +122,44 @@ func TestHiscoreClientEscapesName(t *testing.T) {
 	}
 }
 
+func TestRecipeClientAllItemIDs(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"skill":"","min_level":0,"max_level":0,"count":3,"item_ids":[100,200,300]}`))
+	}))
+	defer srv.Close()
+
+	got, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background())
+	if err != nil {
+		t.Fatalf("AllItemIDs: %v", err)
+	}
+	if gotPath != "/recipes/ids" {
+		t.Errorf("path = %q, want /recipes/ids", gotPath)
+	}
+	want := []int64{100, 200, 300}
+	if len(got) != len(want) {
+		t.Fatalf("ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ids = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestRecipeClientAllItemIDsSurfacesUpstreamStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"db down"}`))
+	}))
+	defer srv.Close()
+
+	if _, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background()); err == nil {
+		t.Fatal("expected an error for a 500 from recipe-service")
+	}
+}
+
 func TestClientsTrimTrailingSlashFromBase(t *testing.T) {
 	if got := NewRecipeClient("http://x:1/").Base; got != "http://x:1" {
 		t.Errorf("base = %q, want no trailing slash", got)
