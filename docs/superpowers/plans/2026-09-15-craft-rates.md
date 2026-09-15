@@ -26,6 +26,11 @@
   on the host: `docker compose exec -T mysql mysql -uroot -proot < file`.
 - Commit messages: imperative subject, no task numbers, no AI attribution.
 - Run `gofmt -l .` before every commit; it must print nothing.
+- Any task that changes a route, a query parameter or a response field
+  updates `openapi/combined.yaml` and runs `make openapi` in the same
+  commit. The contract test only compares route lists, so a new field or
+  parameter will not be caught for you — a client generated from a stale
+  spec compiles and then fails at runtime.
 
 ---
 
@@ -1291,12 +1296,38 @@ curl -s "localhost:8080/calc/45543?player=okadishe" | python3 -m json.tool | gre
 Expected: `aph_source` reads `ticks_forge` for a smithed item, and the
 rate is far below the old flat 600.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: Update the OpenAPI spec**
+
+The contract test compares routes, not schemas, so nothing will catch a
+stale spec here — it has to be done by hand.
+
+In `openapi/combined.yaml`:
+
+- add a `boosts` query parameter (`type: string`, comma-separated, with
+  the token list in its description) to `/calc/{itemID}` and
+  `/calc/batch`;
+- add `inventory_slots` (integer), `bank_trip_ticks` (integer) and
+  `boosts` (string, optional) to the `Assumptions` schema;
+- extend the `aph_source` enum wherever it appears to
+  `wiki, default, override, ticks, ticks_level, ticks_forge`.
+
+Then regenerate and verify:
+
+```bash
+make openapi
+go test ./calc-service/internal/handler/ -run TestRoutesMatchOpenAPISpec -v
+git diff --stat openapi/
+```
+
+Expected: the per-service specs pick up the same changes, and the
+contract test passes.
+
+- [ ] **Step 11: Commit**
 
 ```bash
 gofmt -l .
 go test ./...
-git add shared calc-service
+git add shared calc-service openapi
 git commit -m "Derive actions per hour from mechanics at request time
 
 The rate stopped being a property of the recipe the moment it became
