@@ -113,17 +113,42 @@ type SkillRequirement struct {
 	Met      bool   `json:"met"`
 }
 
+// StepInput is one ingredient of a step, named and priced.
+//
+// Without this the response carried only the step's total buy_cost, so
+// a caller could see that a Bronze bar cost something to make but not
+// that it was made of copper and tin — and a cooked dish looked like a
+// thing bought ready-made rather than raw meat plus a fire. The whole
+// point of walking a tree is to show what it is made of.
+type StepInput struct {
+	ItemID   int64  `json:"item_id,omitempty"`
+	Name     string `json:"name"`
+	Quantity int    `json:"quantity"`
+	// Crafted marks an input produced by another step of this path
+	// rather than bought. Its cost is carried by that step, so Cost
+	// here is zero and must not be added again.
+	Crafted bool `json:"crafted"`
+	// Priced is false when the item has no Grand Exchange price. The
+	// input is still listed, because "we could not price this" is an
+	// answer and silence is not.
+	Priced    bool    `json:"priced"`
+	UnitPrice float64 `json:"unit_price,omitempty"`
+	Cost      float64 `json:"cost"`
+}
+
 type Step struct {
-	Recipe      string  `json:"recipe"`
-	Skill       string  `json:"skill"`
-	LevelReq    int     `json:"level_req"`
-	XP          float64 `json:"xp"`
-	APH         float64 `json:"aph"`
-	APHSource   string  `json:"aph_source"`
-	Runs        int     `json:"runs"`
-	BuyCost     float64 `json:"buy_cost"`
-	SellRevenue float64 `json:"sell_revenue"`
-	Profit      float64 `json:"profit"`
+	Recipe    string  `json:"recipe"`
+	Skill     string  `json:"skill"`
+	LevelReq  int     `json:"level_req"`
+	XP        float64 `json:"xp"`
+	APH       float64 `json:"aph"`
+	APHSource string  `json:"aph_source"`
+	Runs      int     `json:"runs"`
+	// Inputs is every ingredient this step consumes, bought or crafted.
+	Inputs      []StepInput `json:"inputs"`
+	BuyCost     float64     `json:"buy_cost"`
+	SellRevenue float64     `json:"sell_revenue"`
+	Profit      float64     `json:"profit"`
 }
 
 type PathResult struct {
@@ -559,17 +584,33 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 	)
 	// Inputs we buy rather than craft, priced at the assumed buy side.
 	bought := make([]models.RecipeInput, 0, len(node.Recipe.Inputs))
+	stepInputs := make([]StepInput, 0, len(node.Recipe.Inputs))
 	for i, in := range node.Recipe.Inputs {
+		si := StepInput{
+			ItemID:   in.ItemID,
+			Name:     inputLabel(in),
+			Quantity: in.Quantity,
+		}
 		if _, ok := crafting[i]; ok {
+			// Produced by a step of its own; its cost lives there.
+			si.Crafted = true
+			stepInputs = append(stepInputs, si)
 			continue
 		}
 		guide, ok := e.guidePrice(in.ItemID)
 		if !ok {
 			complete = false
 			unpriced = append(unpriced, inputLabel(in))
+			stepInputs = append(stepInputs, si)
 			continue
 		}
-		parentCost += e.market.BuyPrice(guide) * float64(in.Quantity)
+		unit := e.market.BuyPrice(guide)
+		si.Priced = true
+		si.UnitPrice = unit
+		si.Cost = unit * float64(in.Quantity)
+		stepInputs = append(stepInputs, si)
+
+		parentCost += si.Cost
 		bought = append(bought, in)
 	}
 
@@ -612,6 +653,15 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 			scaled.BuyCost = st.BuyCost * r
 			scaled.SellRevenue = st.SellRevenue * r
 			scaled.Profit = st.Profit * r
+			// The ingredient list scales with the step: making two
+			// bars takes twice the copper, and a caller reading the
+			// quantities has to see the same arithmetic the cost did.
+			scaled.Inputs = make([]StepInput, len(st.Inputs))
+			for k, si := range st.Inputs {
+				si.Quantity = si.Quantity * ch.runs
+				si.Cost = si.Cost * r
+				scaled.Inputs[k] = si
+			}
 			childSteps = append(childSteps, scaled)
 		}
 		pathNames = append(pathNames, ch.plan.Path...)
@@ -632,6 +682,7 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 			APH:         aph,
 			APHSource:   aphSource,
 			Runs:        1,
+			Inputs:      stepInputs,
 			BuyCost:     parentCost,
 			SellRevenue: revenue,
 			Profit:      revenue - tax - parentCost,

@@ -479,6 +479,11 @@ components:
           format: double
         actions_per_hour:
           type: integer
+        inputs:
+          type: array
+          description: Omitted in summary listings such as `/search/recipes`.
+          items:
+            $ref: '#/components/schemas/RecipeInput'
         aph_source:
           $ref: '#/components/schemas/AphSource'
         ticks:
@@ -494,11 +499,6 @@ components:
         source:
           type: string
           example: runescape.wiki
-        inputs:
-          type: array
-          description: Omitted in summary listings such as `/search/recipes`.
-          items:
-            $ref: '#/components/schemas/RecipeInput'
     RecipeIdsResponse:
       type: object
       required:

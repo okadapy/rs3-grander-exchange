@@ -1068,6 +1068,16 @@ components:
           format: double
         actions_per_hour:
           type: integer
+        inputs:
+          type: array
+          description: |
+            Every ingredient this step consumes, named and priced.
+            Without it a caller sees that a Bronze bar cost something to
+            make but not that it was made of copper and tin, and a
+            cooked dish looks like a thing bought ready-made rather than
+            raw meat plus a fire.
+          items:
+            $ref: '#/components/schemas/CalcStepInput'
         aph_source:
           $ref: '#/components/schemas/AphSource'
         ticks:
@@ -1494,6 +1504,41 @@ components:
         met:
           type: boolean
 
+    CalcStepInput:
+      type: object
+      required: [name, quantity, crafted, priced, cost]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          description: Absent when the scrape could not resolve the item.
+        name:
+          type: string
+        quantity:
+          type: integer
+          description: |
+            Scaled by the step's `runs`, so it matches the arithmetic
+            behind `cost`: making two bars takes twice the copper.
+        crafted:
+          type: boolean
+          description: |
+            True when this input is produced by another step of the same
+            path rather than bought. Its cost is carried by that step,
+            so `cost` here is 0 and must not be added again.
+        priced:
+          type: boolean
+          description: |
+            False when the item has no Grand Exchange price. The input
+            is still listed — "we could not price this" is an answer,
+            and the path is reported as `complete: false`.
+        unit_price:
+          type: number
+          format: double
+          description: Buy-side price per unit; absent when unpriced.
+        cost:
+          type: number
+          format: double
+
     CalcStep:
       type: object
       required:
@@ -1504,6 +1549,7 @@ components:
         - aph
         - aph_source
         - runs
+        - inputs
         - buy_cost
         - sell_revenue
         - profit

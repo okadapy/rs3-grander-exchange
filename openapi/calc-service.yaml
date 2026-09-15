@@ -613,6 +613,7 @@ components:
       - aph
       - aph_source
       - runs
+      - inputs
       - buy_cost
       - sell_revenue
       - profit
