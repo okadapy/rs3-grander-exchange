@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ELITE_XP_TABLE, STANDARD_XP_TABLE, XP_CAP, levelProgress } from './experience';
 
+// Literal anchors, not values re-derived from the tables themselves: the
+// tables are the source of truth for every bar in the character column, and
+// a transposed digit in them would otherwise pass every test in this file.
+describe('the experience tables', () => {
+  it('matches the wiki anchors the file names as its source', () => {
+    expect(STANDARD_XP_TABLE[98]).toBe(13_034_431);
+    expect(ELITE_XP_TABLE[98]).toBe(36_073_511);
+  });
+});
+
 describe('levelProgress', () => {
   it('computes the fraction and remaining xp for a mid-level skill', () => {
     // Crafting 99, halfway-ish to 100 on the standard table.
