@@ -79,8 +79,10 @@ for smelting a full inventory of bars.
 Pure functions, no database and no HTTP, so they test directly:
 
 - `SmeltTicks(bar string, smithingLevel int) (int, bool)` — the smelting table.
-- `ForgeTicks(bars int, metal string, smithing, firemaking int) (int, bool)`
+- `ForgeTicks(bars int, metal string, smithing, firemaking int, b Boosts) (int, bool)`
   — the forging simulation described below.
+- `ParseBoosts(csv string) (Boosts, error)` — the checkbox set, rejecting
+  unknown tokens.
 - `BarMetal(itemName string) (string, bool)` — recognises a bar and its
   metal, shared by both Smithing paths.
 - `IsStackable(itemName string) bool` — the stackable families.
@@ -191,15 +193,48 @@ reheat whenever heat reaches zero, and return total ticks. Deterministic,
 so it tests directly. The result feeds the same banking model as every
 other recipe.
 
-### Forging simplifications
+### Boosts are an input, not an assumption
 
-Stated because they bound how honest the number is:
+The boost stack more than doubles progress per strike, and none of it is
+visible in a hiscore lookup. Rather than guess, the caller declares what
+they have and the frontend renders it as checkboxes.
 
-- **No perks, gear or consumables.** Rapid, Tinker, Careless, luminite
-  injectors, juju potions, Varrock armour and the Smithing cape reheat
-  perk together more than double progress per strike. None of it is
-  visible in a hiscore lookup, so the model assumes none of it and
-  reports a floor rather than a ceiling.
+`boosts=` takes a comma-separated set, on both `/calc/{itemID}` and
+`/calc/top`. Two groups, matching how the game applies them:
+
+Flat additions to base progress (base is 10):
+
+| Token | Effect |
+|---|---|
+| `smithing_cape` | +5, the reheat perk |
+| `careless5` | +5 |
+| `luminite` | +1, luminite injector |
+
+99 Smithing adds another +1 and is taken from the player's level, not
+from this list.
+
+Double-progress chance, summed then applied as a multiplier:
+
+| Token | Effect |
+|---|---|
+| `rapid4` | +20%, or +22% with equipment level 20 |
+| `tinker2` | +4%, or +4.4% with equipment level 20 |
+| `juju` | +5%, perfect juju smithing potion |
+| `varrock4` | +2%, upgraded Varrock armour 4 |
+| `crystal_hammer` | +1% |
+| `equipment20` | modifier, raises `rapid4` and `tinker2` to their higher values |
+
+Unknown tokens are a 400 rather than a silent no-op: a typo in a checkbox
+name must not quietly produce a number that looks fine.
+
+The empty set is the default, so an unparameterised call still returns
+the conservative floor. Whatever was applied comes back in `assumptions`.
+
+Powerburst of masterstroke is excluded: it multiplies progress by 10 for
+four swings within 30 seconds, which is a burst, not a sustained rate.
+
+### Remaining forging simplifications
+
 - **No +50/+100 material heat bonus.** It raises maximum heat at certain
   levels, but tier boundaries stay thirds of the *unbonused* maximum,
   which makes the interaction fiddly for a small gain. Excluded, which
