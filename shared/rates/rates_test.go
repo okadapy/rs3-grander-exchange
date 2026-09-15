@@ -123,3 +123,44 @@ func TestActionsPerHourRejectsNonPositiveTicks(t *testing.T) {
 		t.Errorf("ActionsPerHour(0, 1) = %d, want 0", got)
 	}
 }
+
+// Zero-valued Config should be rejected and replaced with DefaultConfig.
+func TestActionsPerHourZeroValuedConfigFallback(t *testing.T) {
+	// Config{} is zero-valued; should fall back to DefaultConfig
+	got := ActionsPerHour(3, 1, Config{})
+	if got != 1600 {
+		t.Errorf("ActionsPerHour(3, 1, Config{}) = %d, want 1600 (defaulted)", got)
+	}
+}
+
+// InventorySlots <= 0 should be rejected and replaced with DefaultConfig.
+func TestActionsPerHourInvalidInventorySlotsRejectAndDefault(t *testing.T) {
+	got := ActionsPerHour(3, 1, Config{InventorySlots: 0, BankTripTicks: 21})
+	if got != 1600 {
+		t.Errorf("ActionsPerHour with InventorySlots=0 = %d, want 1600 (defaulted)", got)
+	}
+	got = ActionsPerHour(3, 1, Config{InventorySlots: -1, BankTripTicks: 21})
+	if got != 1600 {
+		t.Errorf("ActionsPerHour with InventorySlots=-1 = %d, want 1600 (defaulted)", got)
+	}
+}
+
+// BankTripTicks < 0 should be rejected and replaced with DefaultConfig.
+func TestActionsPerHourNegativeBankTripTicksRejectAndDefault(t *testing.T) {
+	got := ActionsPerHour(3, 1, Config{InventorySlots: 28, BankTripTicks: -1})
+	if got != 1600 {
+		t.Errorf("ActionsPerHour with BankTripTicks=-1 = %d, want 1600 (defaulted)", got)
+	}
+}
+
+// BankTripTicks = 0 is valid: it means no bank trip overhead.
+// With 28 slots and 1 slot per craft, this gives the maximum rate.
+func TestActionsPerHourZeroBankTripTicksIsValid(t *testing.T) {
+	cfg := Config{InventorySlots: 28, BankTripTicks: 0}
+	got := ActionsPerHour(3, 1, cfg)
+	// craftsPerTrip = 28, tripTicks = 28*3 + 0 = 84
+	// rate = 28 * 6000 / 84 = 168000 / 84 = 2000
+	if got != 2000 {
+		t.Errorf("ActionsPerHour(3, 1, BankTripTicks=0) = %d, want 2000 (no bank trip)", got)
+	}
+}

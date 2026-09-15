@@ -137,12 +137,21 @@ func DefaultConfig() Config {
 //
 // A craft consuming no slots — everything stacks — never forces a trip,
 // so it runs at the raw tick ceiling.
+//
+// Config must be fully initialized. Zero-valued or partially-filled Config
+// structs are detected and replaced with DefaultConfig(); this prevents
+// silently wrong rates from half-filled Configs (e.g., InventorySlots set
+// but BankTripTicks left at zero).
 func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int {
 	if ticks <= 0 {
 		return 0
 	}
-	if cfg.InventorySlots <= 0 {
-		cfg.InventorySlots = 28
+	// Detect and reject invalid or zero-valued Config. This guard is symmetric:
+	// InventorySlots <= 0 is invalid (can't fit items), BankTripTicks < 0 is
+	// invalid (negative time), and 0 == 0 catch zero-valued Config{}. A valid
+	// Config must have positive InventorySlots and non-negative BankTripTicks.
+	if cfg == (Config{}) || cfg.InventorySlots <= 0 || cfg.BankTripTicks < 0 {
+		cfg = DefaultConfig()
 	}
 	if slotsPerCraft <= 0 {
 		return ticksPerHour / ticks
@@ -153,5 +162,8 @@ func ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int {
 		craftsPerTrip = 1
 	}
 	tripTicks := craftsPerTrip*ticks + cfg.BankTripTicks
+	if tripTicks <= 0 {
+		return 0
+	}
 	return craftsPerTrip * ticksPerHour / tripTicks
 }
