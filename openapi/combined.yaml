@@ -1759,8 +1759,13 @@ components:
         rows:
           type: array
           description: |
-            Best first by `metric`. With a `player`, only recipes that
-            player can actually perform appear here.
+            Ordered by `metric`, best first, with two qualifications
+            ahead of it: an incomplete row (an input had no price, so
+            its money figures are upper bounds) sorts below a complete
+            one, and `item_id` ascending breaks an exact tie so two
+            identical requests return the same rows at the `limit`
+            boundary. With a `player`, only recipes that player can
+            actually perform appear here at all.
           items:
             $ref: '#/components/schemas/TopRow'
         assumptions:

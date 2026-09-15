@@ -288,7 +288,9 @@ func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error)
 		// even when every item in the catalogue fails to price.
 		Assumptions: assumptionsFor(market, opts.Calc),
 	}
-	s.cc.Set(key, out)
+	if levelsKnown(opts.Calc, levels) {
+		s.cc.Set(key, out)
+	}
 	return out, nil
 }
 

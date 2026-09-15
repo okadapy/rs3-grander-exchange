@@ -12,7 +12,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/rs3-market/backend/calc-service/internal/cache"
 	"github.com/rs3-market/backend/calc-service/internal/client"
 	"github.com/rs3-market/backend/shared/models"
 	"github.com/rs3-market/backend/shared/rates"
@@ -30,17 +29,26 @@ const maxCombinationsPerNode = 64
 // old model are never served after a deploy.
 const cacheVersion = "v5"
 
+// calcCache is the slice of *cache.CalcCache this package uses. It is
+// an interface only so a test can watch what does and does not get
+// written: "a degraded answer must not be cached" is a statement about
+// the absence of a Set, which is unobservable through a concrete type.
+type calcCache interface {
+	Get(key string, v interface{}) bool
+	Set(key string, v interface{})
+}
+
 type Service struct {
 	log    *zap.Logger
 	recipe *client.RecipeClient
 	price  *client.PriceClient
 	his    *client.HiscoreClient
-	cc     *cache.CalcCache
+	cc     calcCache
 	market Market
 }
 
 func New(log *zap.Logger, r *client.RecipeClient, p *client.PriceClient,
-	h *client.HiscoreClient, cc *cache.CalcCache, market Market) *Service {
+	h *client.HiscoreClient, cc calcCache, market Market) *Service {
 	return &Service{log: log, recipe: r, price: p, his: h, cc: cc, market: market}
 }
 
@@ -235,8 +243,23 @@ func (s *Service) calculate(ctx context.Context, itemID int64, opts Options, lev
 		Paths:       paths,
 		Assumptions: assumptionsFor(market, opts),
 	}
-	s.cc.Set(key, res)
+	if levelsKnown(opts, levels) {
+		s.cc.Set(key, res)
+	}
 	return res, nil
+}
+
+// levelsKnown reports whether the answer rests on the player data the
+// caller asked for. A hiscore outage degrades the result rather than
+// failing it, but the degraded result must not be cached: it carries no
+// meets_requirements at all, and a ranking treats a missing
+// meets_requirements as "the player can do this". Cached under the same
+// key as a healthy answer, one brief outage puts recipes the player
+// cannot perform into a leaderboard that promises only what they can,
+// for the rest of the TTL. With no player there is nothing to lose and
+// caching is unconditional.
+func levelsKnown(opts Options, levels map[string]int) bool {
+	return opts.Player == "" || levels != nil
 }
 
 // resolveMarket applies a caller's spread override, if any, on top of

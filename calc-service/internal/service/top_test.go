@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -391,4 +392,87 @@ func TestTopCacheKeyIgnoresCasing(t *testing.T) {
 func withCalc(base TopOptions, calc Options) TopOptions {
 	base.Calc = calc
 	return base
+}
+
+// spyCache records what a walk decides to cache without standing Redis
+// up. Every Get misses, so each call recomputes.
+type spyCache struct{ sets []string }
+
+func (c *spyCache) Get(string, interface{}) bool { return false }
+func (c *spyCache) Set(key string, _ interface{}) {
+	c.sets = append(c.sets, key)
+}
+
+// upstreamFor answers the four calls a ranking makes. hiscoreStatus 200
+// returns a real skill list; anything else simulates hiscore-service
+// being briefly unreachable.
+func upstreamFor(t *testing.T, hiscoreStatus int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/recipes/ids":
+			_, _ = w.Write([]byte(`{"item_ids":[10]}`))
+		case strings.HasPrefix(r.URL.Path, "/hiscore/"):
+			if hiscoreStatus != http.StatusOK {
+				w.WriteHeader(hiscoreStatus)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"okadishe","skills":[{"skill":"Smithing","level":58}]}`))
+		case strings.HasPrefix(r.URL.Path, "/recipes/"):
+			_, _ = w.Write([]byte(`{"root":{"item_id":10,"recipe":{"name":"Bar",` +
+				`"output_item_id":10,"output_qty":1,"skill":"Smithing","level_req":1,` +
+				`"xp_per_action":1,"actions_per_hour":100,"inputs":[]}}}`))
+		case r.URL.Path == "/prices/latest":
+			_, _ = w.Write([]byte(`{"prices":[{"item_id":10,"price":1000}]}`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A ranking built without the player's levels claims everything is
+// achievable, because a missing meets_requirements reads as "yes".
+// Caching that under the same key a healthy answer uses would let one
+// brief hiscore outage fill a player's leaderboard with recipes they
+// cannot perform for the rest of the TTL.
+func TestDegradedRankingIsNotCached(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		hiscoreStatus int
+		player        string
+		wantCached    bool
+	}{
+		{"hiscores up", http.StatusOK, "okadishe", true},
+		{"hiscores down", http.StatusInternalServerError, "okadishe", false},
+		{"no player asked for", http.StatusInternalServerError, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := upstreamFor(t, tc.hiscoreStatus)
+			spy := &spyCache{}
+			svc := New(zap.NewNop(),
+				client.NewRecipeClient(srv.URL), client.NewPriceClient(srv.URL),
+				client.NewHiscoreClient(srv.URL), spy,
+				Market{DefaultActionsPerHour: 600})
+
+			if _, err := svc.Top(context.Background(), TopOptions{
+				Metric: MetricXPPerHour, Limit: 10,
+				Calc: Options{Player: tc.player},
+			}); err != nil {
+				t.Fatalf("Top: %v", err)
+			}
+
+			var ranking int
+			for _, k := range spy.sets {
+				if strings.HasPrefix(k, "top:") {
+					ranking++
+				}
+			}
+			if got := ranking > 0; got != tc.wantCached {
+				t.Errorf("ranking cached = %v, want %v (keys written: %v)",
+					got, tc.wantCached, spy.sets)
+			}
+		})
+	}
 }
