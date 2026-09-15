@@ -73,10 +73,45 @@ Two smaller honesty flags:
 Reference data refreshes daily. Item IDs are fetched before buy limits,
 because limits are keyed by name and need the ID map to become useful.
 
+### Item IDs
+
+A recipe names its inputs; prices are keyed by GE item ID. Resolving one
+to the other runs in three passes, in this order:
+
+1. recipe outputs, from the wiki item ID map
+2. inputs, from the outputs of recipes that produce them — a bar is an
+   input to one recipe and the output of another
+3. whatever inputs are left, from the item ID map — the gathered
+   materials no recipe produces
+
+Order matters: pass 2 matches input names against output names, so it
+only sees what pass 1 has already resolved.
+
+Resolution runs after every scrape, not on a schedule of its own.
+Upserting a recipe deletes its inputs and inserts them fresh with no
+item ID, so a scrape invalidates exactly what resolution produces; the
+two are one cycle in `scraper.RunScrapeCycle`.
+
+About 3.4k of 14.9k inputs never resolve, and that is correct rather
+than a gap to close. They are untradeable by design — Daemonheim items
+(`Thread (Dungeoneering)`, and the Daemonheim-only hides and tree
+branches that carry no suffix), Summoning charms, minigame currencies
+(`Sacred clay`, `* fragments`) and `Coins`. They have no GE ID because
+they have no GE price, which is what `CalcPath.complete` is reporting
+when it comes back `false`.
+
 ## Configuration
 
 Each service reads `config.yaml`, overridable by environment
 (`RS3_DB_HOST`, `RS3_DB_PASSWORD`, `RS3_REDIS_ADDR`, `RS3_JWT_SECRET`).
+
+SQL logging is configured separately from the service's own
+`log_level`, under `mysql.log_level` (`silent`, `error`, `warn`,
+`info`; default `warn`). Tying the two together meant that asking a
+service for debug logs also asked GORM to print every statement, and a
+scrape upserting thousands of recipes then buried its own progress under
+hundreds of thousands of query lines. At `warn` you still get errors and
+any statement slower than 200ms.
 
 The trading assumptions live under `market:` in
 `calc-service/config.yaml`. They are modelling choices rather than
@@ -124,14 +159,42 @@ make lint-openapi  # validate every spec (needs network)
 ## Migrations
 
 `scripts/init.sql` creates the databases; GORM AutoMigrate handles
-tables. One schema change needs a manual step, since AutoMigrate adds
-columns but never drops them:
+tables. Anything AutoMigrate cannot do — it adds columns and tables but
+never drops them — is a numbered script in `scripts/migrations/`, to be
+applied in order against an existing database:
 
 ```bash
-docker compose exec -T mysql mysql -uroot -proot \
-  < scripts/migrations/001_price_snapshot_single_price.sql
+for f in scripts/migrations/*.sql; do
+  docker compose exec -T mysql mysql -uroot -proot < "$f"
+done
 ```
 
-This collapses `buy_price`/`sell_price` into `price`. Both columns only
-ever held the same guide price; presenting them as a pair implied a
-spread that does not exist. The script is idempotent.
+Every script is idempotent, so re-running the set is safe.
+
+- **001** collapses `buy_price`/`sell_price` into `price`. Both columns
+  only ever held the same guide price; presenting them as a pair implied
+  a spread that does not exist. Also drops `daily_changes`, a table
+  AutoMigrate created and nothing ever wrote to.
+- **002** drops `ge_id_maps`. GORM derived that name from the `GEIDMap`
+  struct before a `TableName` method pinned it to `geid_maps`, and left
+  the original behind holding a stale copy of the item ID map.
+
+## Local operations
+
+Each service exposes dev-only endpoints on its own port. They are not
+routed through the gateway and are not in `combined.yaml`.
+
+```bash
+curl -X POST    localhost:8082/internal/scrape          # scrape + resolve now
+curl            localhost:8082/internal/input-id-stats  # resolution coverage
+curl -X POST    localhost:8082/internal/backfill-inputs
+curl            "localhost:8082/internal/dump?page=Sapphire%20necklace"
+curl -X POST    localhost:8083/internal/poll            # price cycle now
+curl -X DELETE  localhost:8083/internal/poll/lock       # after a crashed poller
+```
+
+A full scrape takes about three minutes and a price cycle about half a
+minute, so neither is instant — watch the logs rather than the response, which
+returns 202 immediately. The poller takes a Redis lock so two instances
+cannot double-poll; `/internal/poll/lock` exists for when a crash leaves
+that lock behind.
