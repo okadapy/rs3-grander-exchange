@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rs3-market/backend/shared/config"
+	"github.com/rs3-market/backend/shared/rates"
 )
 
 func approx(t *testing.T, got, want float64, label string) {
@@ -26,6 +27,32 @@ func TestMarketFromAppliesDefaults(t *testing.T) {
 	}
 	if m.DefaultActionsPerHour != 600 {
 		t.Errorf("non-positive aph should fall back to 600, got %d", m.DefaultActionsPerHour)
+	}
+}
+
+// An unset banking model falls back to the same figures rates.DefaultConfig
+// is calibrated against, so an unconfigured deployment still produces the
+// timed 1600/h for smelting rather than a config-shaped zero.
+func TestMarketFromDefaultsTheBankingModel(t *testing.T) {
+	m := MarketFrom(config.MarketConf{})
+	def := rates.DefaultConfig()
+	if m.InventorySlots != def.InventorySlots {
+		t.Errorf("inventory slots = %d, want %d", m.InventorySlots, def.InventorySlots)
+	}
+}
+
+func TestMarketFromKeepsAConfiguredBankingModel(t *testing.T) {
+	m := MarketFrom(config.MarketConf{InventorySlots: 4, BankTripTicks: 10})
+	if m.InventorySlots != 4 || m.BankTripTicks != 10 {
+		t.Errorf("banking model = %+v, want inventory 4 / bank trip 10", m)
+	}
+}
+
+func TestRatesConfigCarriesTheBankingModel(t *testing.T) {
+	m := MarketFrom(config.MarketConf{InventorySlots: 12, BankTripTicks: 7})
+	cfg := m.RatesConfig()
+	if cfg.InventorySlots != 12 || cfg.BankTripTicks != 7 {
+		t.Errorf("RatesConfig = %+v, want inventory 12 / bank trip 7", cfg)
 	}
 }
 

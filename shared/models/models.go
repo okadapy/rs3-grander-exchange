@@ -32,6 +32,14 @@ const (
 	APHSourceWiki     = "wiki"
 	APHSourceDefault  = "default"
 	APHSourceOverride = "override"
+	// APHSourceTicks is a rate derived from the wiki's published tick
+	// cost. APHSourceTicksLevel and APHSourceTicksForge are derived from
+	// Smithing mechanics and the player's levels — the forge figure is a
+	// floor, since it models no perk or potion the caller did not
+	// declare.
+	APHSourceTicks      = "ticks"
+	APHSourceTicksLevel = "ticks_level"
+	APHSourceTicksForge = "ticks_forge"
 )
 
 type Recipe struct {

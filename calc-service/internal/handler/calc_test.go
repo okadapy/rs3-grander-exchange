@@ -41,7 +41,7 @@ func TestParseOptsAcceptsValidValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet,
-		"/calc/1?aph=900&spread_pct=3.5&player=Zezima&mode=ironman&include_incomplete=true", nil)
+		"/calc/1?aph=900&spread_pct=3.5&player=Zezima&mode=ironman&include_incomplete=true&boosts=smithing_cape,rapid4", nil)
 
 	opts, err := parseOpts(c)
 	if err != nil {
@@ -61,6 +61,41 @@ func TestParseOptsAcceptsValidValues(t *testing.T) {
 	}
 	if !opts.IncludeIncomplete {
 		t.Error("include_incomplete should be true")
+	}
+	if opts.BoostsRaw != "smithing_cape,rapid4" {
+		t.Errorf("boosts raw = %q, want smithing_cape,rapid4", opts.BoostsRaw)
+	}
+	if opts.Boosts.BaseProgressBonus != 5 {
+		t.Errorf("boosts base progress = %d, want 5", opts.Boosts.BaseProgressBonus)
+	}
+}
+
+// A mistyped boost checkbox must fail the request rather than silently
+// falling back to no boost at all.
+func TestParseOptsRejectsUnknownBoost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/calc/1?boosts=not_a_real_boost", nil)
+
+	if _, err := parseOpts(c); err == nil {
+		t.Error("parseOpts should reject an unknown boost token")
+	}
+}
+
+func TestParseOptsBoostsDefaultToEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/calc/1", nil)
+
+	opts, err := parseOpts(c)
+	if err != nil {
+		t.Fatalf("parseOpts: %v", err)
+	}
+	if opts.BoostsRaw != "" {
+		t.Errorf("boosts raw = %q, want empty", opts.BoostsRaw)
+	}
+	if opts.Boosts.BaseProgressBonus != 0 || opts.Boosts.DoubleProgressPct != 0 {
+		t.Errorf("boosts = %+v, want the zero value", opts.Boosts)
 	}
 }
 

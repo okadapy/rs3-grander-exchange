@@ -471,6 +471,7 @@ paths:
           schema:
             type: boolean
             default: false
+        - $ref: '#/components/parameters/CalcBoosts'
       responses:
         '200':
           description: Ranked production strategies.
@@ -525,6 +526,7 @@ paths:
           schema:
             type: boolean
             default: false
+        - $ref: '#/components/parameters/CalcBoosts'
       responses:
         '200':
           description: One entry per requested item.
@@ -721,6 +723,22 @@ components:
       schema:
         $ref: '#/components/schemas/HiscoreMode'
 
+    CalcBoosts:
+      name: boosts
+      in: query
+      description: |
+        Comma-separated forging boosts to assume when simulating a
+        Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+        every other recipe. Unknown tokens are rejected with a 400
+        rather than silently ignored. Recognised tokens: `smithing_cape`,
+        `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+        `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+        their equipment-level-20 values). Omit for the conservative
+        floor — no perk or potion assumed.
+      schema:
+        type: string
+      example: "smithing_cape,rapid4,equipment20"
+
     Limit:
       name: limit
       in: query
@@ -826,8 +844,12 @@ components:
         Where a recipe's actions-per-hour came from. `default` means it
         is a house assumption, not a measured rate — the wiki rarely
         publishes one. Treat `default` figures as good for ranking
-        recipes against each other, not as literal throughput.
-      enum: [wiki, default, override]
+        recipes against each other, not as literal throughput. `ticks`,
+        `ticks_level` and `ticks_forge` are derived from the wiki's tick
+        cost and Smithing mechanics rather than assumed; `ticks_level`
+        and `ticks_forge` additionally require a `player`, since they
+        depend on skill levels.
+      enum: [wiki, default, override, ticks, ticks_level, ticks_forge]
 
     PlayerSkill:
       type: object
@@ -1267,7 +1289,14 @@ components:
 
     CalcAssumptions:
       type: object
-      required: [price_basis, spread_pct, tax_pct, tax_cap_per_item, tax_exempt_below]
+      required:
+        - price_basis
+        - spread_pct
+        - tax_pct
+        - tax_cap_per_item
+        - tax_exempt_below
+        - inventory_slots
+        - bank_trip_ticks
       properties:
         price_basis:
           type: string
@@ -1292,6 +1321,21 @@ components:
           type: string
         mode:
           $ref: '#/components/schemas/HiscoreMode'
+        inventory_slots:
+          type: integer
+          description: |
+            Inventory slots assumed available before a bank trip is
+            needed, feeding every actions-per-hour figure derived from
+            ticks (`aph_source` of `ticks`, `ticks_level` or
+            `ticks_forge`).
+        bank_trip_ticks:
+          type: integer
+          description: Ticks charged for a bank trip when the inventory runs out.
+        boosts:
+          type: string
+          description: |
+            The `boosts` query parameter, echoed back verbatim. Absent
+            when no boosts were declared.
 
     CalcThroughput:
       type: object

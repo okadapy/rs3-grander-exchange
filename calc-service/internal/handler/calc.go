@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rs3-market/backend/calc-service/internal/service"
+	"github.com/rs3-market/backend/shared/rates"
 )
 
 // maxBatchIDs bounds /calc/batch. Each ID fans out into a recipe-tree
@@ -137,6 +138,14 @@ func parseOpts(c *gin.Context) (service.Options, error) {
 	default:
 		return opts, errInvalid("mode must be normal, ironman or hardcore")
 	}
+
+	boosts, err := rates.ParseBoosts(c.Query("boosts"))
+	if err != nil {
+		return opts, errInvalid(err.Error())
+	}
+	opts.Boosts = boosts
+	opts.BoostsRaw = c.Query("boosts")
+
 	return opts, nil
 }
 

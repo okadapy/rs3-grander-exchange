@@ -90,6 +90,12 @@ type MarketConf struct {
 	// DefaultActionsPerHour is the last-resort throughput used when a
 	// recipe has neither a wiki value nor a per-skill default.
 	DefaultActionsPerHour int `mapstructure:"default_actions_per_hour"`
+
+	// InventorySlots and BankTripTicks model the trip to the bank when
+	// the inventory runs out. Defaults of 28 and 21 put smelting bars at
+	// the independently timed 1600 an hour.
+	InventorySlots int `mapstructure:"inventory_slots"`
+	BankTripTicks  int `mapstructure:"bank_trip_ticks"`
 }
 
 type ServicesConf struct {
@@ -149,6 +155,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("market.tax_cap_per_item", 5_000_000)
 	v.SetDefault("market.tax_exempt_below", 0)
 	v.SetDefault("market.default_actions_per_hour", 600)
+	v.SetDefault("market.inventory_slots", 28)
+	v.SetDefault("market.bank_trip_ticks", 21)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err

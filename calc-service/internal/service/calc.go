@@ -15,6 +15,7 @@ import (
 	"github.com/rs3-market/backend/calc-service/internal/cache"
 	"github.com/rs3-market/backend/calc-service/internal/client"
 	"github.com/rs3-market/backend/shared/models"
+	"github.com/rs3-market/backend/shared/rates"
 )
 
 // maxCombinationsPerNode bounds the cartesian product at each tree node.
@@ -27,7 +28,7 @@ const maxCombinationsPerNode = 64
 // cacheVersion is mixed into every cache key. Bump it whenever the
 // output shape or the arithmetic changes, so results computed under the
 // old model are never served after a deploy.
-const cacheVersion = "v3"
+const cacheVersion = "v4"
 
 type Service struct {
 	log    *zap.Logger
@@ -57,6 +58,13 @@ type Options struct {
 	// margin — an unpriced input is costed at nothing, which makes the
 	// worst paths look like the best ones.
 	IncludeIncomplete bool
+
+	// Boosts is the forging stack the caller declared. The zero value is
+	// the conservative floor.
+	Boosts rates.Boosts
+	// BoostsRaw is the unparsed parameter, kept for the assumptions
+	// block and the cache key.
+	BoostsRaw string
 }
 
 // Assumptions is echoed in every response so a number is never separated
@@ -69,6 +77,13 @@ type Assumptions struct {
 	TaxExemptBelow int64   `json:"tax_exempt_below"`
 	Player         string  `json:"player,omitempty"`
 	Mode           string  `json:"mode,omitempty"`
+
+	// InventorySlots and BankTripTicks are the banking model behind
+	// every actions-per-hour figure derived from ticks.
+	InventorySlots int `json:"inventory_slots"`
+	BankTripTicks  int `json:"bank_trip_ticks"`
+	// Boosts is the forging stack the caller declared, verbatim.
+	Boosts string `json:"boosts,omitempty"`
 }
 
 // Throughput reports the ceiling the Grand Exchange buy limits put on a
@@ -187,7 +202,7 @@ func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*R
 		}
 	}
 
-	ev := &evaluator{market: market, prices: prices, limits: limits, opts: opts}
+	ev := &evaluator{market: market, prices: prices, limits: limits, opts: opts, levels: levels}
 	paths := ev.expand(tree.Root)
 
 	if !opts.IncludeIncomplete {
@@ -220,6 +235,9 @@ func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*R
 			TaxExemptBelow: market.TaxExemptBelow,
 			Player:         opts.Player,
 			Mode:           opts.Mode,
+			InventorySlots: market.InventorySlots,
+			BankTripTicks:  market.BankTripTicks,
+			Boosts:         opts.BoostsRaw,
 		},
 	}
 	s.cc.Set(key, res)
@@ -248,6 +266,28 @@ type evaluator struct {
 	prices map[int64]models.PriceSnapshot
 	limits map[int64]int
 	opts   Options
+
+	// levels is the player's skill levels, lowercase-keyed as produced
+	// by playerLevels, or nil when no player was supplied. chooseAPH
+	// looks skills up through the level method, which also accepts the
+	// title-case spelling recipes and this package's own literals use.
+	levels map[string]int
+}
+
+// level looks up a skill in e.levels. Real data arrives lowercase-keyed
+// from playerLevels — the same map applySkillRequirements reads with a
+// lowercased key — while chooseAPH's own literals ("Smithing",
+// "Firemaking") and hand-built test fixtures use the recipe's title
+// case. Trying both keeps this correct against real data without
+// forcing every caller through the same normalization.
+func (e *evaluator) level(skill string) int {
+	if e.levels == nil {
+		return 0
+	}
+	if v, ok := e.levels[skill]; ok {
+		return v
+	}
+	return e.levels[strings.ToLower(skill)]
 }
 
 type childPlan struct {
@@ -502,9 +542,53 @@ func (e *evaluator) guidePrice(itemID int64) (int64, bool) {
 	return p.Price, true
 }
 
+// chooseAPH decides how fast a recipe can actually be performed, and
+// reports where the number came from. The order matters: a caller's
+// override beats everything, mechanics beat the infobox because the
+// infobox publishes the best case, and the house default is the last
+// resort it has always been.
 func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
 	if e.opts.ActionsPerHourOverride > 0 {
 		return e.opts.ActionsPerHourOverride, models.APHSourceOverride
+	}
+
+	slots := rates.SlotsPerCraft(r.Inputs)
+	cfg := e.market.RatesConfig()
+
+	if r.Skill == "Smithing" && e.levels != nil {
+		smithing := e.level("Smithing")
+
+		if r.Facility == "Furnace" {
+			if metal, ok := rates.BarMetal(r.OutputItemName); ok {
+				if ticks, ok := rates.SmeltTicks(metal, smithing); ok {
+					return rates.ActionsPerHour(ticks, slots, cfg),
+						models.APHSourceTicksLevel
+				}
+			}
+		}
+
+		if r.Facility == "Anvil" {
+			for _, in := range r.Inputs {
+				metal, ok := rates.BarMetal(in.ItemName)
+				if !ok {
+					continue
+				}
+				bars := in.Quantity
+				if bars < 1 {
+					bars = 1
+				}
+				ticks, ok := rates.ForgeTicks(bars, metal, smithing,
+					e.level("Firemaking"), e.opts.Boosts)
+				if ok {
+					return rates.ActionsPerHour(ticks, slots, cfg),
+						models.APHSourceTicksForge
+				}
+			}
+		}
+	}
+
+	if r.Ticks > 0 {
+		return rates.ActionsPerHour(r.Ticks, slots, cfg), models.APHSourceTicks
 	}
 	if r.ActionsPerHour > 0 {
 		src := r.APHSource
@@ -666,9 +750,9 @@ func collectItemIDs(n *client.Node) []int64 {
 
 func cacheKey(itemID int64, opts Options, m Market) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|%s",
+	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|boosts=%s|%s",
 		itemID, opts.ActionsPerHourOverride, strings.ToLower(opts.Player), opts.Mode,
 		opts.IncludeIncomplete, m.SpreadPct, m.TaxPct, m.TaxCapPerItem,
-		m.TaxExemptBelow, cacheVersion)
+		m.TaxExemptBelow, strings.ToLower(opts.BoostsRaw), cacheVersion)
 	return "calc:" + hex.EncodeToString(h.Sum(nil))
 }
