@@ -34,7 +34,7 @@ func main() {
 	log := logger.New(cfg.LogLevel, cfg.Env == "local")
 	defer log.Sync()
 
-	gdb, err := db.Open(cfg.MySQL, cfg.LogLevel)
+	gdb, err := db.Open(cfg.MySQL)
 	if err != nil {
 		log.Fatal("db open", zap.Error(err))
 	}

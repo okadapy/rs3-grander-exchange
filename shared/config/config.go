@@ -28,11 +28,15 @@ type Config struct {
 }
 
 type MySQLConfig struct {
-	Host            string        `mapstructure:"host"`
-	Port            int           `mapstructure:"port"`
-	User            string        `mapstructure:"user"`
-	Password        string        `mapstructure:"password"`
-	DBName          string        `mapstructure:"db_name"`
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	DBName   string `mapstructure:"db_name"`
+	// LogLevel controls SQL logging only: silent, error, warn or info.
+	// Empty means warn. Deliberately separate from the service-wide
+	// log_level, see shared/db.gormLogLevel.
+	LogLevel        string        `mapstructure:"log_level"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
