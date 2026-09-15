@@ -273,3 +273,47 @@ it('recalculates via a fresh request to the calc endpoint when Recalculate is cl
   await waitFor(() => expect(calcRequests).toBe(2));
   expect(screen.queryByText(/Prices changed for/)).not.toBeInTheDocument();
 });
+
+it('explains a failed backbone load instead of an empty grid', async () => {
+  server.use(
+    http.get('http://localhost:8080/recipes', () =>
+      HttpResponse.json(
+        { error: 'bad gateway', target: 'http://recipe-service:8082' },
+        { status: 502 },
+      ),
+    ),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: 'Crafting', min_level: 1, max_level: 99, count: 0, item_ids: [] }),
+    ),
+  );
+
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />);
+
+  expect(await screen.findByText('Service recipe-service is unavailable')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+});
+
+it('keeps the rows on screen when only the calculation fails', async () => {
+  server.use(
+    http.get('http://localhost:8080/recipes', () =>
+      HttpResponse.json({ count: 1, recipes: [recipe()] }),
+    ),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: 'Crafting', min_level: 1, max_level: 99, count: 1, item_ids: [1603] }),
+    ),
+    http.get('http://localhost:8080/prices/latest', () =>
+      HttpResponse.json({ count: 1, prices: [snapshot()] }),
+    ),
+    http.get('http://localhost:8080/prices/stats/1603', () => HttpResponse.json(liquidity())),
+    http.get('http://localhost:8080/calc/batch', () =>
+      HttpResponse.json({ error: 'bad gateway', target: 'http://calc-service:8083' }, { status: 502 }),
+    ),
+  );
+
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />);
+
+  expect(await screen.findByText(/Service calc-service is unavailable/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  expect(await screen.findByRole('row', { name: /Ruby/ })).toBeInTheDocument();
+});

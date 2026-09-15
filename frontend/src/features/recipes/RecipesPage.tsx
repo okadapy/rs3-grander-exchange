@@ -1,10 +1,12 @@
 import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { canonicalSkill } from '../../assets/skills';
 import { useCalcBatch } from '../../api/queries/calc';
 import { useLatestPrices, useLiquidityStats } from '../../api/queries/prices';
 import { usePriceableItemIds, useSkillRecipes } from '../../api/queries/recipes';
+import { QueryState } from '../../shared/QueryState';
 import { usePlayerPrefs } from '../character/usePlayerPrefs';
 import { useWs } from '../../ws/WsProvider';
 import { AssumptionsBar } from './AssumptionsBar';
@@ -106,6 +108,31 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
 
   const lastPage = Math.max(0, Math.ceil(backbone.length / PAGE_SIZE) - 1);
 
+  // The grid's backbone is two queries and QueryState takes one, so surface
+  // whichever of them explains why there is nothing to draw. Without this a
+  // gateway 502 rendered as the grid's bare "No rows", indistinguishable
+  // from a skill that genuinely has nothing craftable.
+  const backboneQuery: UseQueryResult<unknown> = recipes.isError
+    ? recipes
+    : priceable.isError
+      ? priceable
+      : recipes.isPending
+        ? recipes
+        : priceable;
+
+  // A failed calculation or price read is not a failed page: the rows stay
+  // on screen and the money columns explain themselves, so these are
+  // reported next to the grid rather than in place of it.
+  const moneyErrors = [
+    calc.isError ? calc.error : null,
+    prices.isError ? prices.error : null,
+  ].filter((entry): entry is Error => entry !== null);
+
+  const retryMoney = () => {
+    if (calc.isError) void calc.refetch();
+    if (prices.isError) void prices.refetch();
+  };
+
   return (
     <Stack spacing={2}>
       <Typography variant="h5" component="h2">Recipes</Typography>
@@ -153,16 +180,31 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
         </Alert>
       )}
 
-      <Box sx={{ height: 640 }}>
-        <DataGrid
-          rows={rows}
-          columns={recipeColumns}
-          loading={recipes.isFetching || calc.isFetching || stats.isPending}
-          hideFooter
-          disableRowSelectionOnClick
-          density="compact"
-        />
-      </Box>
+      {moneyErrors.length > 0 && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          action={<Button size="small" onClick={retryMoney}>Retry</Button>}
+        >
+          {moneyErrors.map((entry) => entry.message).join('. ')}. The rows below are still listed,
+          but their money columns cannot be filled in.
+        </Alert>
+      )}
+
+      <QueryState query={backboneQuery}>
+        {() => (
+          <Box sx={{ height: 640 }}>
+            <DataGrid
+              rows={rows}
+              columns={recipeColumns}
+              loading={recipes.isFetching || calc.isFetching || stats.isPending}
+              hideFooter
+              disableRowSelectionOnClick
+              density="compact"
+            />
+          </Box>
+        )}
+      </QueryState>
 
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
         <Button size="small" disabled={page === 0} onClick={() => setPage(page - 1)}>
