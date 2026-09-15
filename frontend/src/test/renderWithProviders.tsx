@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
 import { PlayerPrefsProvider } from '../features/character/usePlayerPrefs';
 import { theme } from '../theme/theme';
@@ -12,7 +11,7 @@ import { WsProvider } from '../ws/WsProvider';
 
 export function renderWithProviders(
   ui: ReactElement,
-  opts?: { route?: string; socketFactory?: (url: string) => WebSocketLike },
+  opts?: { socketFactory?: (url: string) => WebSocketLike },
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -27,13 +26,11 @@ export function renderWithProviders(
     return (
       <QueryClientProvider client={queryClient}>
         <ThemeProvider theme={theme}>
-          <MemoryRouter initialEntries={[opts?.route ?? '/']}>
-            <AuthProvider>
-              <WsProvider socketFactory={factory}>
-                <PlayerPrefsProvider>{children}</PlayerPrefsProvider>
-              </WsProvider>
-            </AuthProvider>
-          </MemoryRouter>
+          <AuthProvider>
+            <WsProvider socketFactory={factory}>
+              <PlayerPrefsProvider>{children}</PlayerPrefsProvider>
+            </WsProvider>
+          </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>
     );
@@ -45,8 +42,9 @@ export function renderWithProviders(
     ...view,
     // Re-renders through the same Wrapper element so a test can simulate a
     // prop change coming from a parent (e.g. the shell handing down a new
-    // selected skill) without tearing down QueryClient/router/auth/websocket
-    // context, which a bare `rerender(<NextUi />)` would otherwise replace.
+    // selected skill) without tearing down the QueryClient/auth/websocket/
+    // prefs context, which a bare `rerender(<NextUi />)` would otherwise
+    // replace.
     rerender: (next: ReactElement) => view.rerender(<Wrapper>{next}</Wrapper>),
   };
 }
