@@ -1,0 +1,125 @@
+package rates
+
+import (
+	"testing"
+
+	"github.com/rs3-market/backend/shared/models"
+)
+
+// The wiki gives three thresholds per bar: the level it can be smelted
+// at (5 ticks), and the levels where it drops to 4 and then 3.
+func TestSmeltTicksAtSteelThresholds(t *testing.T) {
+	cases := map[int]int{20: 5, 21: 4, 22: 4, 23: 3, 99: 3}
+	for level, want := range cases {
+		got, ok := SmeltTicks("Steel", level)
+		if !ok {
+			t.Errorf("SmeltTicks(Steel, %d) not ok", level)
+			continue
+		}
+		if got != want {
+			t.Errorf("SmeltTicks(Steel, %d) = %d, want %d", level, got, want)
+		}
+	}
+}
+
+// Below the working level there is no rate, not a slow one.
+func TestSmeltTicksBelowWorkingLevel(t *testing.T) {
+	if _, ok := SmeltTicks("Steel", 19); ok {
+		t.Error("SmeltTicks(Steel, 19) reported a rate below the level requirement")
+	}
+}
+
+func TestSmeltTicksUnknownMetal(t *testing.T) {
+	if _, ok := SmeltTicks("Cheese", 99); ok {
+		t.Error("SmeltTicks accepted a metal that is not in the table")
+	}
+}
+
+func TestBarMetalRecognisesBars(t *testing.T) {
+	if m, ok := BarMetal("Rune bar"); !ok || m != "Rune" {
+		t.Errorf("BarMetal(Rune bar) = %q, %v; want Rune, true", m, ok)
+	}
+	if m, ok := BarMetal("Elder rune bar"); !ok || m != "Elder rune" {
+		t.Errorf("BarMetal(Elder rune bar) = %q, %v; want Elder rune, true", m, ok)
+	}
+}
+
+// "Rune bar" is a bar; "Rune platebody" and "Bar" are not.
+func TestBarMetalRejectsNonBars(t *testing.T) {
+	for _, name := range []string{"Rune platebody", "Bar", "Bronze", "Oak plank"} {
+		if _, ok := BarMetal(name); ok {
+			t.Errorf("BarMetal(%q) reported a bar", name)
+		}
+	}
+}
+
+func TestIsStackable(t *testing.T) {
+	stack := []string{"Fire rune", "Law rune", "Coins", "Spirit shards",
+		"Divine energy", "Gold charm", "Feather", "Adamant bolts", "Rune arrow"}
+	for _, name := range stack {
+		if !IsStackable(name) {
+			t.Errorf("IsStackable(%q) = false, want true", name)
+		}
+	}
+	solid := []string{"Rune bar", "Soft clay", "Yew logs", "Steel platebody"}
+	for _, name := range solid {
+		if IsStackable(name) {
+			t.Errorf("IsStackable(%q) = true, want false", name)
+		}
+	}
+}
+
+// Stackables ride along without costing a slot, so a tab made from one
+// clay and two runes is limited by the clay alone.
+func TestSlotsPerCraftCountsOnlyNonStackables(t *testing.T) {
+	inputs := []models.RecipeInput{
+		{ItemName: "Soft clay", Quantity: 1},
+		{ItemName: "Air rune", Quantity: 2},
+		{ItemName: "Law rune", Quantity: 1},
+	}
+	if got := SlotsPerCraft(inputs); got != 1 {
+		t.Errorf("SlotsPerCraft = %d, want 1", got)
+	}
+}
+
+func TestSlotsPerCraftSumsQuantities(t *testing.T) {
+	inputs := []models.RecipeInput{{ItemName: "Rune bar", Quantity: 5}}
+	if got := SlotsPerCraft(inputs); got != 5 {
+		t.Errorf("SlotsPerCraft = %d, want 5", got)
+	}
+}
+
+// The calibration point: a full inventory of bars at 3 ticks each, with
+// one trip to the bank, is a timed 1600 an hour.
+func TestActionsPerHourMatchesTheTimedSmeltingRate(t *testing.T) {
+	if got := ActionsPerHour(3, 1, DefaultConfig()); got != 1600 {
+		t.Errorf("ActionsPerHour(3, 1) = %d, want 1600", got)
+	}
+}
+
+// With nothing to carry there is no trip to the bank, so the rate is the
+// raw tick ceiling.
+func TestActionsPerHourAllStackableInputsHitTheCeiling(t *testing.T) {
+	if got := ActionsPerHour(3, 0, DefaultConfig()); got != 2000 {
+		t.Errorf("ActionsPerHour(3, 0) = %d, want 2000", got)
+	}
+}
+
+// Five bars per craft means five crafts an inventory, so the bank trip is
+// amortised over far fewer actions and the rate drops well under the
+// single-slot case.
+func TestActionsPerHourFallsWhenACraftEatsMoreSlots(t *testing.T) {
+	got := ActionsPerHour(3, 5, DefaultConfig())
+	if got >= 1600 {
+		t.Errorf("ActionsPerHour(3, 5) = %d, want below the single-slot 1600", got)
+	}
+	if got <= 0 {
+		t.Errorf("ActionsPerHour(3, 5) = %d, want a positive rate", got)
+	}
+}
+
+func TestActionsPerHourRejectsNonPositiveTicks(t *testing.T) {
+	if got := ActionsPerHour(0, 1, DefaultConfig()); got != 0 {
+		t.Errorf("ActionsPerHour(0, 1) = %d, want 0", got)
+	}
+}
