@@ -269,23 +269,19 @@ type evaluator struct {
 
 	// levels is the player's skill levels, lowercase-keyed as produced
 	// by playerLevels, or nil when no player was supplied. chooseAPH
-	// looks skills up through the level method, which also accepts the
-	// title-case spelling recipes and this package's own literals use.
+	// looks skills up through the level method, which lowercases the
+	// query to match.
 	levels map[string]int
 }
 
 // level looks up a skill in e.levels. Real data arrives lowercase-keyed
 // from playerLevels — the same map applySkillRequirements reads with a
-// lowercased key — while chooseAPH's own literals ("Smithing",
-// "Firemaking") and hand-built test fixtures use the recipe's title
-// case. Trying both keeps this correct against real data without
-// forcing every caller through the same normalization.
+// lowercased key — so the query is lowercased here too rather than
+// trying the literal case first; a fallback would let a fixture that
+// happens to use the recipe's title case hide a real casing mismatch.
 func (e *evaluator) level(skill string) int {
 	if e.levels == nil {
 		return 0
-	}
-	if v, ok := e.levels[skill]; ok {
-		return v
 	}
 	return e.levels[strings.ToLower(skill)]
 }
@@ -750,9 +746,10 @@ func collectItemIDs(n *client.Node) []int64 {
 
 func cacheKey(itemID int64, opts Options, m Market) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|boosts=%s|%s",
+	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|boosts=%s|%s",
 		itemID, opts.ActionsPerHourOverride, strings.ToLower(opts.Player), opts.Mode,
 		opts.IncludeIncomplete, m.SpreadPct, m.TaxPct, m.TaxCapPerItem,
-		m.TaxExemptBelow, strings.ToLower(opts.BoostsRaw), cacheVersion)
+		m.TaxExemptBelow, m.InventorySlots, m.BankTripTicks,
+		strings.ToLower(opts.BoostsRaw), cacheVersion)
 	return "calc:" + hex.EncodeToString(h.Sum(nil))
 }

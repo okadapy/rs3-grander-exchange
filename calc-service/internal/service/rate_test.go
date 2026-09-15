@@ -33,7 +33,7 @@ func testEvaluator(opts Options, levels map[string]int) *evaluator {
 // An explicit override always wins: the caller asked for a specific
 // number and must get it back.
 func TestChooseAPHOverrideWins(t *testing.T) {
-	e := testEvaluator(Options{ActionsPerHourOverride: 1234}, map[string]int{"Smithing": 99})
+	e := testEvaluator(Options{ActionsPerHourOverride: 1234}, map[string]int{"smithing": 99})
 	rec := models.Recipe{Skill: "Smithing", Ticks: 3, Facility: "Furnace",
 		OutputItemName: "Rune bar"}
 
@@ -46,7 +46,7 @@ func TestChooseAPHOverrideWins(t *testing.T) {
 // Smelting is level-dependent, and the infobox holds the best case, so
 // the level table has to win over it.
 func TestChooseAPHSmeltingUsesTheLevelTable(t *testing.T) {
-	e := testEvaluator(Options{Player: "someone"}, map[string]int{"Smithing": 20})
+	e := testEvaluator(Options{Player: "someone"}, map[string]int{"smithing": 20})
 	rec := models.Recipe{Skill: "Smithing", Ticks: 3, Facility: "Furnace",
 		OutputItemName: "Steel bar",
 		Inputs:         []models.RecipeInput{{ItemName: "Iron ore", Quantity: 1}}}
@@ -64,7 +64,7 @@ func TestChooseAPHSmeltingUsesTheLevelTable(t *testing.T) {
 
 func TestChooseAPHForgingSimulates(t *testing.T) {
 	e := testEvaluator(Options{Player: "someone"},
-		map[string]int{"Smithing": 99, "Firemaking": 99})
+		map[string]int{"smithing": 99, "firemaking": 99})
 	rec := models.Recipe{Skill: "Smithing", Facility: "Anvil",
 		OutputItemName: "Rune platebody",
 		Inputs:         []models.RecipeInput{{ItemName: "Rune bar", Quantity: 5}}}
