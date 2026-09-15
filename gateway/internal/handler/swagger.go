@@ -76,11 +76,14 @@ func Swagger(r *gin.Engine, specDir string) {
 		}
 		sort.Strings(names)
 
+		// combined.yaml describes the whole gateway surface and is the
+		// spec clients should be generated from, so it opens by default
+		// rather than whichever service sorts first.
 		var opts strings.Builder
-		for i, n := range names {
+		for _, n := range names {
 			fmt.Fprintf(&opts,
 				`<option value="/swagger/spec/%s.yaml"%s>%s</option>`,
-				n, selAttr(i == 0), n)
+				n, selAttr(n == "combined"), n)
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8",
 			[]byte(fmt.Sprintf(swaggerHTML, opts.String())))
