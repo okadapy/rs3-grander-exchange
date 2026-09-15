@@ -28,7 +28,7 @@ export function CharacterColumn({ onSelectSkill }: Props) {
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h5" component="h1">Character</Typography>
+      <Typography variant="h5" component="h2">Character</Typography>
 
       {/* This MUI version dropped Stack's legacy alignItems/justifyContent
           passthrough props; they must go through sx or the DOM never gets
@@ -80,7 +80,9 @@ export function CharacterColumn({ onSelectSkill }: Props) {
                     {formatCompact(overall?.xp)} xp, rank {formatInt(overall?.rank)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" data-testid="fetched-at">
-                    Fetched {new Date(player.fetched_at).toLocaleString()}
+                    {/* No explicit locale: the UI copy is English, but the date format itself
+                        is left to the visitor's own browser locale on purpose. */}
+                    Fetched {new Date(player.fetched_at).toLocaleString()} — may be a cached copy
                   </Typography>
                 </Paper>
 

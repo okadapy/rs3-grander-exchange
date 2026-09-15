@@ -12,7 +12,7 @@ interface Props {
 export function RecipesPage({ skill }: Props) {
   return (
     <>
-      <Typography variant="h5" component="h1">Recipes</Typography>
+      <Typography variant="h5" component="h2">Recipes</Typography>
       {skill && (
         <Typography variant="body2" color="text.secondary">
           Filtered by {skill}

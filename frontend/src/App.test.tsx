@@ -18,6 +18,7 @@ it('renders the character column and the recipe area on one screen', async () =>
   expect(await screen.findByRole('heading', { name: 'Character' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Recipes' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Персонаж' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
 });
 
 it('shows a green status dot when every upstream is healthy', async () => {
@@ -40,7 +41,9 @@ it('shows an amber dot when some upstreams are down', async () => {
   );
   renderWithProviders(<App />);
 
-  expect(await screen.findByLabelText(/Some services are not responding/)).toBeInTheDocument();
+  expect(
+    await screen.findByLabelText(/Some services are not responding:.*recipe-service/),
+  ).toBeInTheDocument();
 });
 
 it('shows a red dot when the gateway itself cannot be reached', async () => {

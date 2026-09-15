@@ -12,7 +12,11 @@ export default function App() {
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="static" color="transparent" elevation={0}>
         <Toolbar sx={{ gap: 2, borderBottom: 1, borderColor: 'divider', minHeight: 52 }}>
-          <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 700, flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            component="h1"
+            sx={{ color: 'primary.main', fontWeight: 700, flexGrow: 1 }}
+          >
             RS3 Market
           </Typography>
           <HealthIndicator />
