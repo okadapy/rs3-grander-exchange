@@ -4529,6 +4529,11 @@ data fetching and adds no API call.
   - `selectedSkill` state lifted to the shell, so clicking a skill row in the left column filters the centre table without navigation. Task 11's `RecipesPage` receives it as a prop instead of reading a route.
   - `<StatusDot>` — green / amber / red, with an accessible label.
 
+Heading levels: with both zones mounted at once there must be exactly ONE
+`<h1>` on the screen. The app bar title is it. "Character" and "Recipes" are
+`component="h2"`. Before this task they were both `h1`, which was fine only
+because routing meant one was ever mounted at a time.
+
 - [ ] **Step 1: Write the failing tests**
 
 Replace the routing assertions in `frontend/src/App.test.tsx`. The nav links are gone; there is one screen.
@@ -4563,7 +4568,11 @@ it('shows an amber dot when some upstreams are down', async () => {
   );
   renderWithProviders(<App />);
 
-  expect(await screen.findByLabelText(/Some services are not responding/)).toBeInTheDocument();
+  // Naming the downed service is the whole point of the amber state, so the
+  // assertion has to reach the service name, not just the prefix.
+  expect(
+    await screen.findByLabelText(/Some services are not responding:.*recipe-service/),
+  ).toBeInTheDocument();
 });
 
 it('shows a red dot when the gateway itself cannot be reached', async () => {
