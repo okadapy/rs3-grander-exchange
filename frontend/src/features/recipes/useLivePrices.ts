@@ -39,8 +39,17 @@ export function useLivePrices(itemIds: number[]) {
     });
   }, [key, onPrice, queryClient]);
 
+  const clearStale = useCallback((ids: number[]) => {
+    setStaleItemIds((current) => {
+      if (current.size === 0) return current;
+      const next = new Set(current);
+      for (const id of ids) next.delete(id);
+      return next.size === current.size ? current : next;
+    });
+  }, []);
+
   return {
     staleItemIds,
-    clearStale: useCallback(() => setStaleItemIds(new Set()), []),
+    clearStale,
   };
 }

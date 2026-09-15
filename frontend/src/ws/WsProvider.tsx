@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { API_URL } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
@@ -65,22 +65,35 @@ export function WsProvider({ children, socketFactory }: Props) {
     };
   }, [token, socketFactory]);
 
+  // Stable across renders (deps are empty; both read from refs), so that
+  // useLivePrices' effects - which depend on these three functions - do
+  // not re-run, and resubscribe over the wire, on every chat message.
+  const subscribe = useCallback((itemIds: number[]) => {
+    connectionRef.current?.subscribe(itemIds);
+  }, []);
+
+  const unsubscribe = useCallback((itemIds: number[]) => {
+    connectionRef.current?.unsubscribe(itemIds);
+  }, []);
+
+  const onPrice = useCallback((listener: (snapshot: PriceSnapshot) => void) => {
+    priceListeners.current.add(listener);
+    return () => {
+      priceListeners.current.delete(listener);
+    };
+  }, []);
+
   const value = useMemo<WsContextValue>(
     () => ({
       status,
       messages,
       serverError,
       sendChat: (body) => connectionRef.current?.sendChat(body),
-      subscribe: (itemIds) => connectionRef.current?.subscribe(itemIds),
-      unsubscribe: (itemIds) => connectionRef.current?.unsubscribe(itemIds),
-      onPrice: (listener) => {
-        priceListeners.current.add(listener);
-        return () => {
-          priceListeners.current.delete(listener);
-        };
-      },
+      subscribe,
+      unsubscribe,
+      onPrice,
     }),
-    [status, messages, serverError],
+    [status, messages, serverError, subscribe, unsubscribe, onPrice],
   );
 
   return <WsContext.Provider value={value}>{children}</WsContext.Provider>;

@@ -135,7 +135,7 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
           action={
             <Button
               size="small"
-              onClick={() => { live.clearStale(); void calc.refetch(); }}
+              onClick={() => { live.clearStale(pageIds); void calc.refetch(); }}
             >
               Recalculate
             </Button>

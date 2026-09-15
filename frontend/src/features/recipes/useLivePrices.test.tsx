@@ -68,3 +68,21 @@ it('ignores a price frame for an item outside the current page', async () => {
 
   await waitFor(() => expect(result.current.staleItemIds.size).toBe(0));
 });
+
+it('clears only the recalculated ids, leaving other stale flags in place', async () => {
+  const client = new QueryClient();
+  const { result } = renderHook(() => useLivePrices([1603, 1605]), { wrapper: makeWrapper(client) });
+
+  act(() => {
+    emitPrice?.(snapshot({ item_id: 1603, price: 3100 }));
+    emitPrice?.(snapshot({ item_id: 1605, price: 50 }));
+  });
+  await waitFor(() => expect(result.current.staleItemIds).toEqual(new Set([1603, 1605])));
+
+  // Only 1603 was actually recomputed (e.g. the user navigated to a page
+  // that no longer includes 1605 before clicking Recalculate); 1605's
+  // stale flag must survive so a later view of it still shows the notice.
+  act(() => { result.current.clearStale([1603]); });
+
+  expect(result.current.staleItemIds).toEqual(new Set([1605]));
+});

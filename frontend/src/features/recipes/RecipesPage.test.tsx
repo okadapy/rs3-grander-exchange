@@ -1,12 +1,37 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useState } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
+import type { WebSocketLike } from '../../ws/connection';
 import { batchEntry, liquidity, path, recipe, result, snapshot } from '../../test/fixtures';
 import { server } from '../../test/msw/server';
 import { renderWithProviders } from '../../test/renderWithProviders';
 import { RecipesPage } from './RecipesPage';
+
+class FakeSocket implements WebSocketLike {
+  static last: FakeSocket | null = null;
+
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: ((event: { code: number }) => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(readonly url: string) {
+    FakeSocket.last = this;
+  }
+  send(data: string) {
+    this.sent.push(data);
+  }
+  close() {
+    /* nothing to do in the fake */
+  }
+}
+
+function signedIn() {
+  localStorage.setItem('rs3.auth', JSON.stringify({ token: 'jwt-abc', username: 'okadishe' }));
+}
 
 function backend(over: { calcEntry?: unknown } = {}) {
   server.use(
@@ -26,7 +51,10 @@ function backend(over: { calcEntry?: unknown } = {}) {
   );
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  FakeSocket.last = null;
+});
 
 // The shell owns the selected skill (Delta B); this harness stands in for it
 // so a click on the in-page skill selector has somewhere to report to.
@@ -163,4 +191,85 @@ it('says that sorting only covers the loaded page', async () => {
   expect(
     await screen.findByText(/Sorting applies within the loaded page/),
   ).toBeInTheDocument();
+});
+
+it('shows the degradation notice while the socket is not open, and hides it once connected', async () => {
+  backend();
+  signedIn();
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />, {
+    socketFactory: (url) => new FakeSocket(url),
+  });
+
+  await screen.findByRole('row', { name: /Ruby/ });
+  expect(
+    screen.getByText(/Live prices require a signed-in token/),
+  ).toBeInTheDocument();
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+  });
+
+  await waitFor(() =>
+    expect(screen.queryByText(/Live prices require a signed-in token/)).not.toBeInTheDocument(),
+  );
+});
+
+it('marks the row stale when a live price tick arrives for an item on the page', async () => {
+  backend();
+  signedIn();
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />, {
+    socketFactory: (url) => new FakeSocket(url),
+  });
+
+  await screen.findByRole('row', { name: /Ruby/ });
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+    FakeSocket.last?.onmessage?.({
+      data: JSON.stringify({ type: 'price', payload: snapshot({ price: 3_100 }) }),
+    });
+  });
+
+  expect(await screen.findByText(/Prices changed for 1 item\(s\)/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Recalculate' })).toBeInTheDocument();
+});
+
+it('recalculates via a fresh request to the calc endpoint when Recalculate is clicked', async () => {
+  let calcRequests = 0;
+  server.use(
+    http.get('http://localhost:8080/recipes', () =>
+      HttpResponse.json({ count: 1, recipes: [recipe()] }),
+    ),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: 'Crafting', min_level: 1, max_level: 99, count: 1, item_ids: [1603] }),
+    ),
+    http.get('http://localhost:8080/prices/latest', () =>
+      HttpResponse.json({ count: 1, prices: [snapshot()] }),
+    ),
+    http.get('http://localhost:8080/prices/stats/1603', () => HttpResponse.json(liquidity())),
+    http.get('http://localhost:8080/calc/batch', () => {
+      calcRequests += 1;
+      return HttpResponse.json({ count: 1, results: [batchEntry()] });
+    }),
+  );
+  signedIn();
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />, {
+    socketFactory: (url) => new FakeSocket(url),
+  });
+
+  await screen.findByRole('row', { name: /Ruby/ });
+  await waitFor(() => expect(calcRequests).toBe(1));
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+    FakeSocket.last?.onmessage?.({
+      data: JSON.stringify({ type: 'price', payload: snapshot({ price: 3_100 }) }),
+    });
+  });
+  await screen.findByText(/Prices changed for 1 item\(s\)/);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Recalculate' }));
+
+  await waitFor(() => expect(calcRequests).toBe(2));
+  expect(screen.queryByText(/Prices changed for/)).not.toBeInTheDocument();
 });
