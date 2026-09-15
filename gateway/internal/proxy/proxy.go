@@ -66,6 +66,23 @@ func Build(cfgs []config.RouteConfig, log *zap.Logger) ([]*Route, error) {
 			req.Header.Set("X-Forwarded-Host", req.Host)
 		}
 
+		// The gateway is the single CORS authority for the traffic it
+		// fronts. Every service also applies its own permissive CORS
+		// middleware so it stays directly callable on its own port in
+		// development, and those headers arrive here on the response.
+		// Left in place they are emitted alongside the gateway's own,
+		// and a browser rejects a response carrying
+		// "Access-Control-Allow-Origin" twice — so the duplicate breaks
+		// exactly the callers CORS exists to serve.
+		rp.ModifyResponse = func(resp *http.Response) error {
+			for h := range resp.Header {
+				if strings.HasPrefix(http.CanonicalHeaderKey(h), "Access-Control-") {
+					resp.Header.Del(h)
+				}
+			}
+			return nil
+		}
+
 		// Capture route target for logging inside the error handler.
 		targetStr := c.Target
 		rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/rs3-market/backend/shared/config"
+	"github.com/rs3-market/backend/shared/rates"
 )
 
 // Market holds the trading assumptions applied on top of raw Grand
@@ -30,6 +31,11 @@ type Market struct {
 	TaxExemptBelow int64
 
 	DefaultActionsPerHour int
+
+	// InventorySlots and BankTripTicks model the trip to the bank when
+	// the inventory runs out, feeding rates.ActionsPerHour.
+	InventorySlots int
+	BankTripTicks  int
 }
 
 // PriceBasis names the source of the underlying number, so the frontend
@@ -43,6 +49,8 @@ func MarketFrom(cfg config.MarketConf) Market {
 		TaxCapPerItem:         cfg.TaxCapPerItem,
 		TaxExemptBelow:        cfg.TaxExemptBelow,
 		DefaultActionsPerHour: cfg.DefaultActionsPerHour,
+		InventorySlots:        cfg.InventorySlots,
+		BankTripTicks:         cfg.BankTripTicks,
 	}
 	if m.DefaultActionsPerHour <= 0 {
 		m.DefaultActionsPerHour = 600
@@ -50,7 +58,27 @@ func MarketFrom(cfg config.MarketConf) Market {
 	if m.SpreadPct < 0 {
 		m.SpreadPct = 0
 	}
+	// InventorySlots <= 0 means the config was never set (there is no
+	// legitimate zero-slot inventory); BankTripTicks < 0 is the same
+	// signal for that field alone. Zero BankTripTicks is left alone —
+	// it validly means "no bank trip overhead" — matching the guard
+	// rates.ActionsPerHour itself applies to a Config.
+	def := rates.DefaultConfig()
+	if m.InventorySlots <= 0 {
+		m.InventorySlots = def.InventorySlots
+	}
+	if m.BankTripTicks < 0 {
+		m.BankTripTicks = def.BankTripTicks
+	}
 	return m
+}
+
+// RatesConfig is the banking model the throughput calculation uses.
+func (m Market) RatesConfig() rates.Config {
+	return rates.Config{
+		InventorySlots: m.InventorySlots,
+		BankTripTicks:  m.BankTripTicks,
+	}
 }
 
 // BuyPrice is what we assume one unit actually costs to acquire.

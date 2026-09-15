@@ -32,6 +32,14 @@ const (
 	APHSourceWiki     = "wiki"
 	APHSourceDefault  = "default"
 	APHSourceOverride = "override"
+	// APHSourceTicks is a rate derived from the wiki's published tick
+	// cost. APHSourceTicksLevel and APHSourceTicksForge are derived from
+	// Smithing mechanics and the player's levels — the forge figure is a
+	// floor, since it models no perk or potion the caller did not
+	// declare.
+	APHSourceTicks      = "ticks"
+	APHSourceTicksLevel = "ticks_level"
+	APHSourceTicksForge = "ticks_forge"
 )
 
 type Recipe struct {
@@ -40,16 +48,23 @@ type Recipe struct {
 	OutputItemID int64  `gorm:"index" json:"output_item_id"`
 	// Indexed because ID resolution joins recipe_inputs.item_name
 	// against this column after every scrape.
-	OutputItemName string        `gorm:"size:160;index" json:"output_item_name"`
-	OutputQty      int           `json:"output_qty"`
-	Skill          string        `gorm:"size:32;index" json:"skill"`
-	LevelReq       int           `json:"level_req"`
-	XPPerAction    float64       `json:"xp_per_action"`
-	ActionsPerHour int           `json:"actions_per_hour"`
-	APHSource      string        `gorm:"size:16" json:"aph_source"`
-	Members        bool          `json:"members"`
-	Source         string        `gorm:"size:64" json:"source"`
-	Inputs         []RecipeInput `gorm:"foreignKey:RecipeID" json:"inputs,omitempty"`
+	OutputItemName string  `gorm:"size:160;index" json:"output_item_name"`
+	OutputQty      int     `json:"output_qty"`
+	Skill          string  `gorm:"size:32;index" json:"skill"`
+	LevelReq       int     `json:"level_req"`
+	XPPerAction    float64 `json:"xp_per_action"`
+	ActionsPerHour int     `json:"actions_per_hour"`
+	APHSource      string  `gorm:"size:16" json:"aph_source"`
+	// Ticks is the per-action tick cost from the recipe infobox. Zero
+	// means the wiki did not publish one, or published "varies" because
+	// the real cost depends on mechanics the infobox cannot express.
+	Ticks int `gorm:"index" json:"ticks"`
+	// Facility is where the recipe is made — Furnace, Anvil and so on.
+	// It separates mechanics that share a skill.
+	Facility string        `gorm:"size:48" json:"facility,omitempty"`
+	Members  bool          `json:"members"`
+	Source   string        `gorm:"size:64" json:"source"`
+	Inputs   []RecipeInput `gorm:"foreignKey:RecipeID" json:"inputs,omitempty"`
 }
 
 type RecipeInput struct {

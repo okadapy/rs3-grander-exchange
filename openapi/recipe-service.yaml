@@ -326,13 +326,24 @@ components:
 
         publishes one. Treat `default` figures as good for ranking
 
-        recipes against each other, not as literal throughput.
+        recipes against each other, not as literal throughput. `ticks`,
+
+        `ticks_level` and `ticks_forge` are derived from the wiki''s tick
+
+        cost and Smithing mechanics rather than assumed; `ticks_level`
+
+        and `ticks_forge` additionally require a `player`, since they
+
+        depend on skill levels.
 
         '
       enum:
       - wiki
       - default
       - override
+      - ticks
+      - ticks_level
+      - ticks_forge
     BuyLimitsResponse:
       type: object
       required:
@@ -440,6 +451,7 @@ components:
       - xp_per_action
       - actions_per_hour
       - aph_source
+      - ticks
       - members
       - source
       properties:
@@ -469,6 +481,14 @@ components:
           type: integer
         aph_source:
           $ref: '#/components/schemas/AphSource'
+        ticks:
+          type: integer
+          description: Per-action tick cost from the wiki infobox. Zero when the wiki published none,
+            or published `varies`.
+        facility:
+          type: string
+          description: Where the recipe is made, such as `Furnace` or `Anvil` — what separates smelting
+            from forging within Smithing.
         members:
           type: boolean
         source:

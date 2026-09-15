@@ -263,6 +263,75 @@ func TestResolveLink(t *testing.T) {
 	}
 }
 
+func TestParseWikitextReadsTicks(t *testing.T) {
+	wt := `{{Infobox Recipe
+|ticks = 3
+|facility = Furnace
+|skill1 = Smithing
+|skill1lvl = 20
+|skill1exp = 75
+|mat1 = Iron ore
+|mat1qty = 1
+|output1 = Steel bar
+}}`
+	rec := parseWikitext("Steel bar", "", wt)
+	if rec == nil {
+		t.Fatal("parseWikitext returned nil")
+	}
+	if rec.Ticks != 3 {
+		t.Errorf("Ticks = %d, want 3", rec.Ticks)
+	}
+	if rec.Facility != "Furnace" {
+		t.Errorf("Facility = %q, want Furnace", rec.Facility)
+	}
+}
+
+// "varies" is the wiki's way of saying the cost depends on mechanics the
+// infobox cannot express. It must not be read as a number.
+func TestParseWikitextTreatsVariesAsUnknown(t *testing.T) {
+	wt := `{{Infobox Recipe
+|ticks = varies
+|facility = Anvil
+|skill1 = Smithing
+|skill1lvl = 50
+|skill1exp = 1200
+|mat1 = Rune bar
+|mat1qty = 5
+|output1 = Rune platebody
+}}`
+	rec := parseWikitext("Rune platebody", "", wt)
+	if rec == nil {
+		t.Fatal("parseWikitext returned nil")
+	}
+	if rec.Ticks != 0 {
+		t.Errorf("Ticks = %d, want 0 for a varies value", rec.Ticks)
+	}
+	if rec.Facility != "Anvil" {
+		t.Errorf("Facility = %q, want Anvil", rec.Facility)
+	}
+}
+
+func TestParseWikitextMissingTicksIsZero(t *testing.T) {
+	wt := `{{Infobox Recipe
+|skill1 = Crafting
+|skill1lvl = 5
+|skill1exp = 10
+|mat1 = Ball of wool
+|mat1qty = 1
+|output1 = Wool
+}}`
+	rec := parseWikitext("Wool", "", wt)
+	if rec == nil {
+		t.Fatal("parseWikitext returned nil")
+	}
+	if rec.Ticks != 0 {
+		t.Errorf("Ticks = %d, want 0", rec.Ticks)
+	}
+	if rec.Facility != "" {
+		t.Errorf("Facility = %q, want empty", rec.Facility)
+	}
+}
+
 func TestCleanValue(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"  Crafting  ", "Crafting"},

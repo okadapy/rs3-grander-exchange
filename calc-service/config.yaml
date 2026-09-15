@@ -43,3 +43,9 @@ market:
   # Throughput used when a recipe has no wiki value and its skill has no
   # default of its own.
   default_actions_per_hour: 600
+
+  # Banking model for the throughput calculation: how much the
+  # inventory holds and how many ticks a trip to the bank costs when it
+  # runs out.
+  inventory_slots: 28
+  bank_trip_ticks: 21

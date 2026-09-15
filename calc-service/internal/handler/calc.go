@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rs3-market/backend/calc-service/internal/service"
+	"github.com/rs3-market/backend/shared/rates"
 )
 
 // maxBatchIDs bounds /calc/batch. Each ID fans out into a recipe-tree
@@ -27,8 +28,10 @@ func New(svc *service.Service, log *zap.Logger) *Handler {
 
 func (h *Handler) Register(r *gin.Engine) {
 	r.GET("/health", h.health)
-	// Static before param so "batch" is never read as an item ID.
+	// Static before param so "batch" and "top" are never read as an
+	// item ID.
 	r.GET("/calc/batch", h.batch)
+	r.GET("/calc/top", h.top)
 	r.GET("/calc/:itemID", h.calc)
 }
 
@@ -109,6 +112,45 @@ func (h *Handler) batch(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"count": len(results), "results": results})
 }
 
+// top handles GET /calc/top: the whole catalogue ranked by one metric.
+// metric is required and has no default — asking for a ranking without
+// saying of what is a mistake worth reporting as a 400, not guessing.
+func (h *Handler) top(c *gin.Context) {
+	metric, err := service.ParseMetric(c.Query("metric"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	opts, err := parseOpts(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a non-negative integer"})
+			return
+		}
+		limit = n
+	}
+
+	res, err := h.svc.Top(c.Request.Context(), service.TopOptions{
+		Metric: metric,
+		Skill:  strings.TrimSpace(c.Query("skill")),
+		Limit:  limit,
+		Calc:   opts,
+	})
+	if err != nil {
+		h.log.Warn("top failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
 func parseOpts(c *gin.Context) (service.Options, error) {
 	opts := service.Options{
 		Player:            strings.TrimSpace(c.Query("player")),
@@ -137,6 +179,14 @@ func parseOpts(c *gin.Context) (service.Options, error) {
 	default:
 		return opts, errInvalid("mode must be normal, ironman or hardcore")
 	}
+
+	boosts, err := rates.ParseBoosts(c.Query("boosts"))
+	if err != nil {
+		return opts, errInvalid(err.Error())
+	}
+	opts.Boosts = boosts
+	opts.BoostsRaw = c.Query("boosts")
+
 	return opts, nil
 }
 

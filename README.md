@@ -49,6 +49,27 @@ returns a liquidity `score` and `tier` built from traded volume, how
 recently the price moved, and how often it moves. Check `observations`
 to see how much data the score rests on.
 
+**Ranking the catalogue is a route, not a client-side loop.**
+`GET /calc/top?metric=gp_per_hour` walks every priceable recipe —
+around 5800 of them — and returns the best path for each, sorted by
+one metric. `metric` is required (`xp_per_hour`, `gp_per_hour` or
+`gp_per_xp`) and has no default: asking for a ranking without saying of
+what is a mistake worth a 400, not a guess. `metric=gp_per_hour` sorts
+on `gp_per_hour_limited`, the same throughput-bound rate described
+above — sorting on the raw `gp_per_hour` would put a godsword nobody
+forges six hundred times an hour above the things people actually
+craft.
+
+With a `player`, recipes that player's levels cannot perform are dropped
+from the ranking outright, and every row that remains carries
+`meets_requirements: true`. A leaderboard is read as a list of things to
+go and do, and the game's highest-XP recipes are end-game chains a
+mid-level account will never reach — which are also the ones whose rate
+falls back to the house default, since the level gate that refuses them
+refuses to derive a tick cost too. Left in, they crowd out the reachable
+items with a server-invented number. Without a `player` there is nothing
+to compare levels against, so the whole catalogue ranks.
+
 Two smaller honesty flags:
 
 - `CalcPath.complete` — `false` means an input had no price and was
@@ -182,6 +203,9 @@ Every script is idempotent, so re-running the set is safe.
   input name against it, unindexed on both sides, which took ~13s with
   nothing to write and ~44s on a run that resolved rows. It used to run
   once a day where nobody noticed; it now runs after every scrape.
+- **004** adds `recipes.ticks` and `recipes.facility`. The tick cost
+  drives the craft-rate model; the facility separates smelting at a
+  furnace from forging at an anvil, which share a skill but not a rate.
 
 ## Local operations
 

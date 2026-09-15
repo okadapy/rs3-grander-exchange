@@ -49,7 +49,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.RequestIDAndLog(log))
+	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.CORSDefault(), middleware.RequestIDAndLog(log))
 	h.Register(r)
 
 	srv := &http.Server{Addr: ":" + itoa(cfg.Port), Handler: r}
