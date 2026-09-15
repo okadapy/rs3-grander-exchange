@@ -5,10 +5,10 @@
 Two gaps in the recipe table as it stands.
 
 The money columns answer *how much*, never *where*. A row says a craft nets
-85.7k, but not that the path buys 80 bars first and is 412k down until the
-last step sells. `/calc` already returns that breakdown — `CalcPath.steps`,
-one entry per stage with its own buy cost, revenue and profit — and the
-frontend was throwing it away.
+85.7k, but not which stage of the chain earned it and which one destroyed
+value. `/calc` already returns that breakdown — `CalcPath.steps`, one entry
+per stage with its own buy cost, revenue and profit — and the frontend was
+throwing it away.
 
 The table is also reachable only by skill. There was no way to ask about one
 named item, which is the first thing anyone wants to do with a market tool.
@@ -38,17 +38,23 @@ read without them is read without its basis.
 ## 2. Craft breakdown
 
 `CraftBreakdown` takes an item name and one `CalcPath`, and renders a row per
-step: ordinal, recipe, runs per finished item, skill and level, XP, buy, sell,
-profit, and a **running** profit accumulated across the steps. The running
-column is the point of the component — it is what says at which stage the path
-goes under and when it comes back.
+step: ordinal, recipe, runs per finished item, skill and level, XP, buy, sell
+and profit — the server's own figures for that stage, priced on its own.
 
 Two rules it holds to:
 
-- The totals row takes `buy_cost`, `sell_revenue` and `profit_per_craft` from
-  the path, never the sum of the steps. Tax is charged outside any single
-  step, so the two differ by a few GP, and a table that summed its own rows
-  would quietly contradict the Margin column fed by the same field.
+- **The stages are never summed.** The first draft of this component carried a
+  running profit accumulated down the column, on the assumption that the
+  stages compose. Driving the real gateway disproved it: for item 2363 the
+  three stages read +856 in total while `profit_per_craft` is −3463, and for
+  1673 the stages read +1182 against −1163. An intermediate is consumed by the
+  next stage rather than sold, so its revenue never reaches the path. A
+  running total over this column is a number that is true of nothing, and it
+  would contradict the Margin column fed by the same response. The table says
+  so in a line under itself rather than leaving the reader to add the rows up
+  by eye.
+- The totals row therefore takes `buy_cost`, `sell_revenue` and
+  `profit_per_craft` from the path, never from the steps.
 - A path with no steps says so instead of drawing an empty table.
 
 It hangs off the item-name cell as a `Tooltip` rather than a popover: the
@@ -85,8 +91,10 @@ and an item with no priceable path.
 ## Testing
 
 RTL and MSW, no mocking of internals. `CraftBreakdown` is covered directly
-(step order, running total, server totals winning over the sum, empty steps,
-incomplete paths); the hover is covered through `RecipesPage`, the tab switch
+(step order, per-stage figures with no derived running total, server totals,
+empty steps, incomplete paths) on fixtures copied from real `/calc/1673`
+responses, so a future running total would fail rather than look plausible;
+the hover is covered through `RecipesPage`, the tab switch
 through `App`, and the search through `ItemsPage` including the debounce
 threshold, the source filter reaching the query string, and every failure mode
 above.

@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { path, step } from '../../test/fixtures';
 import { CraftBreakdown } from './CraftBreakdown';
 
-// Two steps with opposite signs: the first buys inputs and sells nothing,
-// the second sells the finished item. A running total is the only way to
-// see that the path is under water until the last step pays for it.
+// Real /calc/1673 shape, rounded: the gateway prices each stage on its own,
+// so the stages read +804 and +378 while the path itself nets -1163. Anything
+// this component derives by adding the stages up would contradict the Margin
+// column fed by the same response.
 const chained = path({
   path: ['Gold bar', 'Gold amulet'],
   steps: [
@@ -13,11 +14,11 @@ const chained = path({
       recipe: 'Gold bar',
       skill: 'Smithing',
       level_req: 40,
-      xp: 22.5,
-      runs: 2,
-      buy_cost: 900,
-      sell_revenue: 0,
-      profit: -900,
+      xp: 7,
+      runs: 1,
+      buy_cost: 1_541,
+      sell_revenue: 2_392,
+      profit: 804,
     }),
     step({
       recipe: 'Gold amulet',
@@ -26,16 +27,16 @@ const chained = path({
       xp: 30,
       runs: 1,
       buy_cost: 0,
-      sell_revenue: 1_800,
-      profit: 1_800,
+      sell_revenue: 385,
+      profit: 378,
     }),
   ],
-  buy_cost: 900,
-  sell_revenue: 1_800,
-  profit_per_craft: 882,
-  tax_paid: 18,
-  total_xp: 75,
-  roi_pct: 98,
+  buy_cost: 1_541,
+  sell_revenue: 385,
+  profit_per_craft: -1_163,
+  tax_paid: 7,
+  total_xp: 37,
+  roi_pct: -75.5,
 });
 
 function cells(row: HTMLElement) {
@@ -53,33 +54,33 @@ describe('CraftBreakdown', () => {
     expect(cells(rows[2])[1]).toBe('Gold amulet');
   });
 
-  it('accumulates profit across the steps', () => {
+  it('shows each stage priced on its own, without deriving a running total', () => {
     render(<CraftBreakdown itemName="Gold amulet" path={chained} />);
 
     const rows = screen.getAllByRole('row');
-    // Per-step profit, then the running total: −900 alone, then +900 once
-    // the second step sells.
-    expect(cells(rows[1]).slice(-2)).toEqual(['-900', '-900']);
-    expect(cells(rows[2]).slice(-2)).toEqual(['1.8K', '900']);
+    expect(cells(rows[1]).at(-1)).toBe('804');
+    expect(cells(rows[2]).at(-1)).toBe('378');
+    // 804 + 378 = 1182, a number that is true of nothing: the bar is consumed
+    // by the next stage, never sold. It must appear nowhere.
+    expect(screen.queryByText('1.2K')).not.toBeInTheDocument();
+    expect(screen.getByText(/do not add up to the total/)).toBeInTheDocument();
   });
 
   it('takes the totals from the server rather than summing the steps', () => {
     render(<CraftBreakdown itemName="Gold amulet" path={chained} />);
 
-    // The steps add up to 900; the path nets 882 because 18 GP of tax is
-    // charged outside any single step. Showing the sum here would quietly
-    // contradict the Margin column.
-    // Cells are [Total, XP, Buy, Sell, Profit, note] — the label spans the
-    // first four columns.
+    // The stages read +804 and +378; the path nets -1163, because only the
+    // finished amulet is ever sold. Cells are [Total, XP, Buy, Sell, Profit]
+    // — the label spans the first four columns.
     const totals = cells(screen.getAllByRole('row')[3]);
-    expect(totals[4]).toBe('882');
+    expect(totals[4]).toBe('-1.2K');
   });
 
   it('reports the headline rates under the table', () => {
     render(<CraftBreakdown itemName="Gold amulet" path={chained} />);
 
-    expect(screen.getByText(/ROI 98.0%/)).toBeInTheDocument();
-    expect(screen.getByText(/tax 18/)).toBeInTheDocument();
+    expect(screen.getByText(/ROI -75.5%/)).toBeInTheDocument();
+    expect(screen.getByText(/tax 7/)).toBeInTheDocument();
   });
 
   it('names the unpriced inputs when the path is incomplete', () => {

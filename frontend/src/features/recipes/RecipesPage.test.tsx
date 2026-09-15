@@ -404,7 +404,7 @@ it('breaks the craft down step by step when the item name is hovered', async () 
         paths: [
           path({
             steps: [
-              step({ recipe: 'Uncut ruby', buy_cost: 2_400, sell_revenue: 0, profit: -2_400 }),
+              step({ recipe: 'Uncut ruby', buy_cost: 2_400, sell_revenue: 2_500, profit: 100 }),
               step({ recipe: 'Ruby', buy_cost: 0, sell_revenue: 2_707, profit: 2_707 }),
             ],
           }),
@@ -418,9 +418,11 @@ it('breaks the craft down step by step when the item name is hovered', async () 
   await userEvent.hover(screen.getByText('Ruby', { selector: 'p' }));
 
   const breakdown = await screen.findByRole('table');
-  expect(within(breakdown).getByText('Uncut ruby')).toBeInTheDocument();
-  // Running profit: the path is under water until the sale pays for it,
-  // so the first step reads -2.4K in both the profit and running columns.
-  expect(within(breakdown).getAllByText('-2.4K')).toHaveLength(2);
-  expect(within(breakdown).getByText('307')).toBeInTheDocument();
+  const rows = within(breakdown).getAllByRole('row');
+  expect(within(rows[1]).getAllByRole('cell')[1]).toHaveTextContent('Uncut ruby');
+  // Each stage keeps the server's own margin for it...
+  expect(within(rows[1]).getAllByRole('cell').at(-1)).toHaveTextContent('100');
+  // ...and the totals row stays the path's own margin, the same 301 the
+  // Margin column shows, rather than anything summed out of the stages.
+  expect(within(rows[3]).getAllByRole('cell').at(-1)).toHaveTextContent('301');
 });

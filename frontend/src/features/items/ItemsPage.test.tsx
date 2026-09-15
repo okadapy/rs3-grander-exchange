@@ -84,8 +84,8 @@ it('breaks the chosen item down step by step', async () => {
           paths: [
             path({
               steps: [
-                step({ recipe: 'Gold bar', buy_cost: 900, sell_revenue: 0, profit: -900 }),
-                step({ recipe: 'Gold amulet', buy_cost: 0, sell_revenue: 1_800, profit: 1_800 }),
+                step({ recipe: 'Gold bar', buy_cost: 1_541, sell_revenue: 2_392, profit: 804 }),
+                step({ recipe: 'Gold amulet', buy_cost: 0, sell_revenue: 385, profit: 378 }),
               ],
             }),
           ],
@@ -100,10 +100,9 @@ it('breaks the chosen item down step by step', async () => {
 
   const breakdown = await screen.findByRole('table');
   expect(within(breakdown).getByText('Gold bar')).toBeInTheDocument();
-  // The running column, last cell of the second step row: the path only
-  // turns positive once that step sells.
+  // Each stage carries the server's own margin for it, last cell of its row.
   const lastStep = within(breakdown).getAllByRole('row')[2];
-  expect(within(lastStep).getAllByRole('cell').at(-1)).toHaveTextContent('900');
+  expect(within(lastStep).getAllByRole('cell').at(-1)).toHaveTextContent('378');
   expect(calls).toEqual(['/calc/1673']);
 });
 

@@ -40,20 +40,20 @@ function Num({ value }: { value: number | null | undefined }) {
 }
 
 /**
- * The steps of one production path, with a running profit so the reader can
- * see which stage the money is actually made at — a chain that buys 80 bars
- * before it sells anything is under water for every step but the last, and a
- * per-step profit column alone does not say that.
+ * The steps of one production path, each with the server's own figures for
+ * that stage: what it buys, what its output is worth, and the margin between
+ * them. That is what says which stage of a chain carries the money and which
+ * one destroys it.
+ *
+ * The stages deliberately do not add up to the totals row, and are not
+ * presented as if they did. An intermediate is consumed by the next stage
+ * rather than sold, so its revenue never reaches the path — a rune bar chain
+ * whose stages read +856 in total nets −3463 once only the finished item is
+ * sold. A running total over this column would contradict the Margin figure
+ * fed by the very same response.
  */
 export function CraftBreakdown({ itemName, path }: Props) {
   const { steps } = path;
-
-  // The running total is the sum of the steps, but the path's own totals are
-  // not: tax is charged on the sale, outside any single step. Both numbers
-  // are shown, and the totals row uses the server's, so this table can never
-  // disagree with the Margin column that came from the same field.
-  let running = 0;
-  const cumulative = steps.map((entry) => (running += entry.profit));
 
   return (
     <Box sx={{ p: 1.5, minWidth: 520 }}>
@@ -77,7 +77,6 @@ export function CraftBreakdown({ itemName, path }: Props) {
               <TableCell align="right">Buy</TableCell>
               <TableCell align="right">Sell</TableCell>
               <TableCell align="right">Profit</TableCell>
-              <TableCell align="right">Running</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -99,7 +98,6 @@ export function CraftBreakdown({ itemName, path }: Props) {
                 <TableCell align="right"><Num value={entry.buy_cost} /></TableCell>
                 <TableCell align="right"><Num value={entry.sell_revenue} /></TableCell>
                 <TableCell align="right"><Signed value={entry.profit} /></TableCell>
-                <TableCell align="right"><Signed value={cumulative[index]} /></TableCell>
               </TableRow>
             ))}
 
@@ -111,12 +109,16 @@ export function CraftBreakdown({ itemName, path }: Props) {
               <TableCell align="right"><Num value={path.buy_cost} /></TableCell>
               <TableCell align="right"><Num value={path.sell_revenue} /></TableCell>
               <TableCell align="right"><Signed value={path.profit_per_craft} /></TableCell>
-              <TableCell align="right">
-                <Typography variant="caption" color="text.secondary">after tax</Typography>
-              </TableCell>
             </TableRow>
           </TableBody>
         </Table>
+      )}
+
+      {steps.length > 0 && (
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+          Each stage is priced on its own. They do not add up to the total: an intermediate is
+          consumed by the next stage, not sold, and the total is the path's own figure after tax.
+        </Typography>
       )}
 
       <Divider sx={{ my: 1 }} />
