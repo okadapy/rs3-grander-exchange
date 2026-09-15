@@ -3,6 +3,7 @@ import type { components } from '../../api/schema';
 
 type Recipe = components['schemas']['Recipe'];
 type CalcBatchEntry = components['schemas']['CalcBatchEntry'];
+type CalcPath = components['schemas']['CalcPath'];
 type CalcAssumptions = components['schemas']['CalcAssumptions'];
 type PriceSnapshot = components['schemas']['PriceSnapshot'];
 type LiquidityStats = components['schemas']['LiquidityStats'];
@@ -33,7 +34,10 @@ export interface RecipeRow {
   buyLimit4h: number | null;
   caveats: RowCaveat[];
   unpricedInputs: string[];
-  pathNames: string[];
+  // The whole winning path, not just its recipe names: the hover
+  // breakdown reads its steps, and they arrive in the same /calc/batch
+  // response the money columns are already built from.
+  bestPath: CalcPath | null;
   error: string | null;
 }
 
@@ -98,7 +102,7 @@ export function buildRows({ recipes, calc, prices, stats }: BuildRowsInput): Rec
       buyLimit4h: stat?.buy_limit_4h ?? null,
       caveats,
       unpricedInputs: best?.unpriced_inputs ?? [],
-      pathNames: best?.path ?? [],
+      bestPath: best,
       error,
     });
   }

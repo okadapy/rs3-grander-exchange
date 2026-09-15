@@ -2,6 +2,7 @@ import type { components } from '../api/schema';
 
 type Recipe = components['schemas']['Recipe'];
 type CalcPath = components['schemas']['CalcPath'];
+type CalcStep = components['schemas']['CalcStep'];
 type CalcResult = components['schemas']['CalcResult'];
 type CalcBatchEntry = components['schemas']['CalcBatchEntry'];
 type PriceSnapshot = components['schemas']['PriceSnapshot'];
@@ -19,6 +20,7 @@ export function recipe(over: Partial<Recipe> = {}): Recipe {
     xp_per_action: 85,
     actions_per_hour: 1000,
     aph_source: 'wiki',
+    ticks: 3,
     members: false,
     source: 'runescape.wiki',
     inputs: [],
@@ -26,10 +28,26 @@ export function recipe(over: Partial<Recipe> = {}): Recipe {
   };
 }
 
+export function step(over: Partial<CalcStep> = {}): CalcStep {
+  return {
+    recipe: 'Ruby',
+    skill: 'Crafting',
+    level_req: 34,
+    xp: 85,
+    aph: 1000,
+    aph_source: 'wiki',
+    runs: 1,
+    buy_cost: 2_400,
+    sell_revenue: 2_707,
+    profit: 301,
+    ...over,
+  };
+}
+
 export function path(over: Partial<CalcPath> = {}): CalcPath {
   return {
     path: ['Uncut ruby', 'Ruby'],
-    steps: [],
+    steps: [step()],
     profit_per_craft: 301,
     gp_per_hour: 301_000,
     xp_per_hour: 85_000,
@@ -68,6 +86,8 @@ export function result(over: Partial<CalcResult> = {}): CalcResult {
       tax_pct: 1,
       tax_cap_per_item: 5_000_000,
       tax_exempt_below: 100,
+      inventory_slots: 28,
+      bank_trip_ticks: 10,
     },
     paths: [path()],
     ...over,

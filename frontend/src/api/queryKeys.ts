@@ -1,6 +1,7 @@
 import type { components } from './schema';
 
 type HiscoreMode = components['schemas']['HiscoreMode'];
+type ItemSource = components['schemas']['ItemSource'];
 
 export interface CalcParams {
   player?: string;
@@ -21,5 +22,9 @@ export const queryKeys = {
   liquidity: (itemId: number) => ['liquidity', itemId] as const,
   calcBatch: (ids: number[], params: CalcParams) =>
     ['calcBatch', ids.join(','), params] as const,
+  calcItem: (itemId: number, params: CalcParams) =>
+    ['calcItem', itemId, params] as const,
+  itemSearch: (query: string, source: ItemSource, limit: number, offset: number) =>
+    ['itemSearch', query, source, limit, offset] as const,
   chatHistory: () => ['chatHistory'] as const,
 };

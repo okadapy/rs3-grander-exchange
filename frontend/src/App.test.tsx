@@ -115,3 +115,21 @@ it('sends the name typed in the character column to the profitability calculatio
   await waitFor(() => expect(players.at(-1)).toBe('Zezima'));
   expect(screen.queryByText(/Character name is not set/)).not.toBeInTheDocument();
 });
+
+it('switches the main area between the recipe table and the item search', async () => {
+  server.use(healthHandler());
+  renderWithProviders(<App />);
+
+  expect(await screen.findByRole('heading', { name: 'Recipes' })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('tab', { name: 'Items' }));
+
+  expect(await screen.findByRole('heading', { name: 'Items' })).toBeInTheDocument();
+  // The recipe table is unmounted, not hidden: it polls prices and
+  // recalculates margins, and a background tab doing that is waste.
+  expect(screen.queryByRole('heading', { name: 'Recipes' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Item name')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('tab', { name: 'Recipes' }));
+  expect(await screen.findByRole('heading', { name: 'Recipes' })).toBeInTheDocument();
+});

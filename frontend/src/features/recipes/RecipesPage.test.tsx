@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { useState } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { WebSocketLike } from '../../ws/connection';
-import { batchEntry, liquidity, path, recipe, result, snapshot } from '../../test/fixtures';
+import { batchEntry, liquidity, path, recipe, result, snapshot, step } from '../../test/fixtures';
 import { server } from '../../test/msw/server';
 import { renderWithProviders } from '../../test/renderWithProviders';
 import { RecipesPage } from './RecipesPage';
@@ -94,6 +94,10 @@ it('shows the assumptions the money figures rest on', async () => {
 
   expect(await screen.findByText(/Spread 2\.0%/)).toBeInTheDocument();
   expect(screen.getByText(/tax 1\.0%/)).toBeInTheDocument();
+  // The tick-derived action rates the updated spec introduced rest on
+  // these two, so a GP/h read without them is read without its basis.
+  expect(screen.getByText(/28 inventory slots/)).toBeInTheDocument();
+  expect(screen.getByText(/10 ticks per bank trip/)).toBeInTheDocument();
 });
 
 it('marks a path whose actions-per-hour is a house assumption', async () => {
@@ -391,4 +395,32 @@ it('says there is no liquidity data rather than printing a missing score', async
   const row = await screen.findByRole('row', { name: /Ruby/ });
   expect(within(row).getByText('no data')).toBeInTheDocument();
   expect(within(row).queryByText(/null/)).not.toBeInTheDocument();
+});
+
+it('breaks the craft down step by step when the item name is hovered', async () => {
+  backend({
+    calcEntry: batchEntry({
+      result: result({
+        paths: [
+          path({
+            steps: [
+              step({ recipe: 'Uncut ruby', buy_cost: 2_400, sell_revenue: 0, profit: -2_400 }),
+              step({ recipe: 'Ruby', buy_cost: 0, sell_revenue: 2_707, profit: 2_707 }),
+            ],
+          }),
+        ],
+      }),
+    }),
+  });
+  await chooseCrafting();
+  await screen.findByText('12.5%');
+
+  await userEvent.hover(screen.getByText('Ruby', { selector: 'p' }));
+
+  const breakdown = await screen.findByRole('table');
+  expect(within(breakdown).getByText('Uncut ruby')).toBeInTheDocument();
+  // Running profit: the path is under water until the sale pays for it,
+  // so the first step reads -2.4K in both the profit and running columns.
+  expect(within(breakdown).getAllByText('-2.4K')).toHaveLength(2);
+  expect(within(breakdown).getByText('307')).toBeInTheDocument();
 });

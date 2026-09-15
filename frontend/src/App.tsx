@@ -1,12 +1,16 @@
-import { AppBar, Box, Toolbar, Typography } from '@mui/material';
+import { AppBar, Box, Tab, Tabs, Toolbar, Typography } from '@mui/material';
 import { useState } from 'react';
 import { HealthIndicator } from './shared/HealthIndicator';
 import { CharacterColumn } from './features/character/CharacterPage';
+import { ItemsPage } from './features/items/ItemsPage';
 import { RecipesPage } from './features/recipes/RecipesPage';
 import { ChatPopup } from './features/chat/ChatPopup';
 
 export default function App() {
   const [selectedSkill, setSelectedSkill] = useState('');
+  // No router in the app (it was removed once the shell stopped needing
+  // one), so the open tab is plain shell state and never a URL.
+  const [tab, setTab] = useState<'recipes' | 'items'>('recipes');
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -54,7 +58,24 @@ export default function App() {
             flexDirection: 'column',
           }}
         >
-          <RecipesPage skill={selectedSkill} onSkillChange={setSelectedSkill} />
+          <Tabs
+            value={tab}
+            onChange={(_, next: 'recipes' | 'items') => setTab(next)}
+            sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+          >
+            <Tab value="recipes" label="Recipes" />
+            <Tab value="items" label="Items" />
+          </Tabs>
+
+          {/* Unmounted rather than hidden: the recipe table holds a live
+              price subscription and a page of calculations, and keeping
+              them running behind an invisible tab would poll for rows
+              nobody is looking at. */}
+          {tab === 'recipes' ? (
+            <RecipesPage skill={selectedSkill} onSkillChange={setSelectedSkill} />
+          ) : (
+            <ItemsPage />
+          )}
         </Box>
       </Box>
 

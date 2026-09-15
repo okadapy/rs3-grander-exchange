@@ -313,6 +313,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calc/top": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The catalogue ranked by one headline metric
+         * @description Walks every priceable recipe — around 5800 of them — and returns
+         *     the best path for each, ranked by `metric`. Answers from cache
+         *     on anything but the first call for a given parameter set.
+         *
+         *     `metric` is required; there is no default, because asking for a
+         *     ranking without saying of what is a mistake worth reporting
+         *     rather than guessing at.
+         *
+         *     `gp_per_hour` ranks on `gp_per_hour_limited`, the buy-limit-bound
+         *     rate, not the raw `gp_per_hour`. The raw figure multiplies one
+         *     craft's profit by a full hour of actions, which floats items
+         *     nobody can produce at that rate — a godsword nobody forges six
+         *     hundred times an hour — above the things people actually craft.
+         *
+         *     When `player` is supplied, recipes that player's levels cannot
+         *     perform are dropped from the ranking entirely. A leaderboard is
+         *     read as a list of things to go and do, and the highest-XP
+         *     recipes in the game are end-game chains a mid-level account will
+         *     never reach; they are also the ones whose rate falls back to the
+         *     house default, because the level gate that refuses them refuses
+         *     to derive a tick cost as well. Left in, they crowd out the
+         *     reachable items with a server-invented number. Every row
+         *     returned therefore has `meets_requirements: true`.
+         *
+         *     Without a `player` there is nothing to compare levels against,
+         *     so the whole catalogue ranks and `meets_requirements` is absent.
+         *
+         *     An item whose calculation fails (no priceable path, upstream
+         *     error) is simply absent from the ranking rather than failing the
+         *     whole request, the same reasoning `/calc/batch` uses to report
+         *     failures per entry.
+         */
+        get: operations["calculateTop"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/hiscore/{name}": {
         parameters: {
             query?: never;
@@ -469,10 +519,14 @@ export interface components {
          * @description Where a recipe's actions-per-hour came from. `default` means it
          *     is a house assumption, not a measured rate — the wiki rarely
          *     publishes one. Treat `default` figures as good for ranking
-         *     recipes against each other, not as literal throughput.
+         *     recipes against each other, not as literal throughput. `ticks`,
+         *     `ticks_level` and `ticks_forge` are derived from the wiki's tick
+         *     cost and Smithing mechanics rather than assumed; `ticks_level`
+         *     and `ticks_forge` additionally require a `player`, since they
+         *     depend on skill levels.
          * @enum {string}
          */
-        AphSource: "wiki" | "default" | "override";
+        AphSource: "wiki" | "default" | "override" | "ticks" | "ticks_level" | "ticks_forge";
         PlayerSkill: {
             /** Format: int64 */
             id: number;
@@ -532,6 +586,10 @@ export interface components {
             xp_per_action: number;
             actions_per_hour: number;
             aph_source: components["schemas"]["AphSource"];
+            /** @description Per-action tick cost from the wiki infobox. Zero when the wiki published none, or published `varies`. */
+            ticks: number;
+            /** @description Where the recipe is made, such as `Furnace` or `Anvil` — what separates smelting from forging within Smithing. */
+            facility?: string;
             members: boolean;
             /** @example runescape.wiki */
             source: string;
@@ -734,6 +792,20 @@ export interface components {
             tax_exempt_below: number;
             player?: string;
             mode?: components["schemas"]["HiscoreMode"];
+            /**
+             * @description Inventory slots assumed available before a bank trip is
+             *     needed, feeding every actions-per-hour figure derived from
+             *     ticks (`aph_source` of `ticks`, `ticks_level` or
+             *     `ticks_forge`).
+             */
+            inventory_slots: number;
+            /** @description Ticks charged for a bank trip when the inventory runs out. */
+            bank_trip_ticks: number;
+            /**
+             * @description The `boosts` query parameter, echoed back verbatim. Absent
+             *     when no boosts were declared.
+             */
+            boosts?: string;
         };
         /**
          * @description The ceiling the Grand Exchange buy limits put on a strategy,
@@ -749,7 +821,10 @@ export interface components {
             max_crafts_per_4h: number;
             /**
              * Format: double
-             * @description The lower of actions-per-hour and the buy-limit rate.
+             * @description The lower of the buy-limit rate and the rate the whole path
+             *     completes at (`1 / total_hours`). Not the root step's
+             *     `actions_per_hour`: on a chained path the root step runs
+             *     several times for each finished item.
              */
             crafts_per_hour: number;
             /**
@@ -771,6 +846,11 @@ export interface components {
             level_req: number;
             /** Format: double */
             xp: number;
+            /**
+             * Format: double
+             * @description Fractional: an item costing 80 bars takes about 1.7
+             *     hours, so its honest rate is well below one an hour.
+             */
             aph: number;
             aph_source: components["schemas"]["AphSource"];
             /** @description Times this step runs per unit of the final output. */
@@ -814,6 +894,11 @@ export interface components {
             sell_revenue: number;
             /** Format: double */
             tax_paid: number;
+            /**
+             * Format: double
+             * @description Fractional: an item costing 80 bars takes about 1.7
+             *     hours, so its honest rate is well below one an hour.
+             */
             actions_per_hour: number;
             aph_source: components["schemas"]["AphSource"];
             /**
@@ -851,6 +936,80 @@ export interface components {
         CalcBatchResponse: {
             count: number;
             results: components["schemas"]["CalcBatchEntry"][];
+        };
+        /**
+         * @description What /calc/top ranks by. No default — it is required.
+         * @enum {string}
+         */
+        TopMetric: "xp_per_hour" | "gp_per_hour" | "gp_per_xp";
+        /** @description The best production path for one item, under one metric. */
+        TopRow: {
+            /** Format: int64 */
+            item_id: number;
+            name: string;
+            skill: string;
+            level_req: number;
+            /** Format: double */
+            xp_per_hour: number;
+            /**
+             * Format: double
+             * @description Unconstrained rate. `gp_per_hour` ranks on
+             *     `gp_per_hour_limited` instead — prefer that field.
+             */
+            gp_per_hour: number;
+            /**
+             * Format: double
+             * @description `gp_per_hour` capped by the binding input's Grand Exchange
+             *     buy limit where one is known, equal to `gp_per_hour`
+             *     otherwise. Never above `gp_per_hour`: the cap is on how
+             *     often the whole path can be completed. This is the field
+             *     `metric=gp_per_hour` sorts on.
+             */
+            gp_per_hour_limited: number;
+            /** Format: double */
+            gp_per_xp: number;
+            /**
+             * Format: double
+             * @description Fractional: an item costing 80 bars takes about 1.7
+             *     hours, so its honest rate is well below one an hour.
+             */
+            actions_per_hour: number;
+            aph_source: components["schemas"]["AphSource"];
+            /**
+             * @description False means an input had no price and was costed at zero.
+             *     Only ever false when `include_incomplete=true` was passed.
+             */
+            complete: boolean;
+            /**
+             * @description The bought input whose buy limit produced
+             *     `gp_per_hour_limited`. Absent when no bought input has a
+             *     known buy limit.
+             */
+            binding_item_name?: string;
+            /**
+             * @description Whether the player has every level this path needs. Always
+             *     `true` on a ranking, which drops what the player cannot
+             *     perform; absent when no `player` was supplied, since with no
+             *     hiscore data "you qualify" would be a guess presented as
+             *     fact.
+             */
+            meets_requirements?: boolean;
+        };
+        TopResponse: {
+            metric: components["schemas"]["TopMetric"];
+            /** @description Number of rows returned (at most `limit`). */
+            count: number;
+            /**
+             * @description Ordered by `metric`, best first, with two qualifications
+             *     ahead of it: an incomplete row (an input had no price, so
+             *     its money figures are upper bounds) sorts below a complete
+             *     one, and `item_id` ascending breaks an exact tie so two
+             *     identical requests return the same rows at the `limit`
+             *     boundary. With a `player`, only recipes that player can
+             *     actually perform appear here at all.
+             */
+            rows: components["schemas"]["TopRow"][];
+            assumptions: components["schemas"]["CalcAssumptions"];
         };
         Credentials: {
             username: string;
@@ -959,6 +1118,18 @@ export interface components {
         Window: string;
         /** @description Hiscore table to read. */
         HiscoreMode: components["schemas"]["HiscoreMode"];
+        /**
+         * @description Comma-separated forging boosts to assume when simulating a
+         *     Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+         *     every other recipe. Unknown tokens are rejected with a 400
+         *     rather than silently ignored. Recognised tokens: `smithing_cape`,
+         *     `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+         *     `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+         *     their equipment-level-20 values). Omit for the conservative
+         *     floor — no perk or potion assumed.
+         * @example smithing_cape,rapid4,equipment20
+         */
+        CalcBoosts: string;
         /** @description Page size. Capped at 500. */
         Limit: number;
         /** @description Rows to skip. */
@@ -1379,6 +1550,18 @@ export interface operations {
                  *     zero — so they are excluded by default.
                  */
                 include_incomplete?: boolean;
+                /**
+                 * @description Comma-separated forging boosts to assume when simulating a
+                 *     Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+                 *     every other recipe. Unknown tokens are rejected with a 400
+                 *     rather than silently ignored. Recognised tokens: `smithing_cape`,
+                 *     `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+                 *     `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+                 *     their equipment-level-20 values). Omit for the conservative
+                 *     floor — no perk or potion assumed.
+                 * @example smithing_cape,rapid4,equipment20
+                 */
+                boosts?: components["parameters"]["CalcBoosts"];
             };
             header?: never;
             path: {
@@ -1427,6 +1610,18 @@ export interface operations {
                 /** @description Hiscore table to read. */
                 mode?: components["parameters"]["HiscoreMode"];
                 include_incomplete?: boolean;
+                /**
+                 * @description Comma-separated forging boosts to assume when simulating a
+                 *     Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+                 *     every other recipe. Unknown tokens are rejected with a 400
+                 *     rather than silently ignored. Recognised tokens: `smithing_cape`,
+                 *     `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+                 *     `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+                 *     their equipment-level-20 values). Omit for the conservative
+                 *     floor — no perk or potion assumed.
+                 * @example smithing_cape,rapid4,equipment20
+                 */
+                boosts?: components["parameters"]["CalcBoosts"];
             };
             header?: never;
             path?: never;
@@ -1441,6 +1636,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalcBatchResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    calculateTop: {
+        parameters: {
+            query: {
+                /** @description What to rank by. No default. */
+                metric: components["schemas"]["TopMetric"];
+                /**
+                 * @description RS3 display name. When supplied, actions-per-hour for
+                 *     Smithing recipes is derived from this player's levels where
+                 *     the mechanics allow it.
+                 */
+                player?: string;
+                /** @description Hiscore table to read. */
+                mode?: components["parameters"]["HiscoreMode"];
+                /** @description Restrict the ranking to recipes of this skill. */
+                skill?: string;
+                /**
+                 * @description Rows to return. `0` or omitted uses the default of 20; a
+                 *     value above 100 is clamped to 100 rather than rejected.
+                 */
+                limit?: number;
+                /**
+                 * @description Override actions-per-hour for every step of every path.
+                 *     Omit to use each recipe's own value — the mechanics-derived
+                 *     rates this ranking is built on.
+                 */
+                aph?: number;
+                /**
+                 * @description Override the assumed round-trip buy/sell spread, as a
+                 *     percentage of the guide price. Omit to use the server
+                 *     default.
+                 */
+                spread_pct?: number;
+                /**
+                 * @description Include paths with an input we could not price. Their money
+                 *     figures are upper bounds, so they are excluded by default.
+                 */
+                include_incomplete?: boolean;
+                /**
+                 * @description Comma-separated forging boosts to assume when simulating a
+                 *     Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+                 *     every other recipe. Unknown tokens are rejected with a 400
+                 *     rather than silently ignored. Recognised tokens: `smithing_cape`,
+                 *     `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+                 *     `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+                 *     their equipment-level-20 values). Omit for the conservative
+                 *     floor — no perk or potion assumed.
+                 * @example smithing_cape,rapid4,equipment20
+                 */
+                boosts?: components["parameters"]["CalcBoosts"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalogue ranked by `metric`, best first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

@@ -3,6 +3,7 @@ import type { GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ItemIcon } from '../../shared/ItemIcon';
 import { SkillIcon } from '../../shared/SkillIcon';
 import { ABSENT, formatCompact, formatInt, formatPct } from '../../shared/format';
+import { CraftBreakdown } from './CraftBreakdown';
 import type { RecipeRow, RowCaveat } from './buildRows';
 
 const CAVEAT_TITLES: Record<RowCaveat, string> = {
@@ -84,27 +85,53 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     flex: 1,
     minWidth: 220,
     renderCell: (params: GridRenderCellParams<RecipeRow, string>) => (
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-        <ItemIcon itemId={params.row.itemId} name={params.row.itemName} />
-        <Typography variant="body2" noWrap>{params.row.itemName}</Typography>
+      // Tooltip rather than a popover: it opens on keyboard focus as well as
+      // hover, and the breakdown is read-only, so nothing inside it needs to
+      // survive the pointer leaving. A row whose calculation failed has no
+      // path to break down and keeps a bare cell.
+      <Tooltip
+        title={
+          params.row.bestPath
+            ? <CraftBreakdown itemName={params.row.itemName} path={params.row.bestPath} />
+            : ''
+        }
+        placement="right-start"
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 'none',
+              p: 0,
+              bgcolor: 'background.paper',
+              color: 'text.primary',
+              border: 1,
+              borderColor: 'divider',
+              boxShadow: 3,
+            },
+          },
+        }}
+      >
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+          <ItemIcon itemId={params.row.itemId} name={params.row.itemName} />
+          <Typography variant="body2" noWrap>{params.row.itemName}</Typography>
 
-        {params.row.error && (
-          <Typography variant="caption" color="text.secondary" noWrap title={params.row.error}>
-            {params.row.error}
-          </Typography>
-        )}
+          {params.row.error && (
+            <Typography variant="caption" color="text.secondary" noWrap title={params.row.error}>
+              {params.row.error}
+            </Typography>
+          )}
 
-        {params.row.caveats.map((caveat) => (
-          <Chip
-            key={caveat}
-            size="small"
-            variant="outlined"
-            color={caveat === 'incomplete' ? 'warning' : 'default'}
-            title={CAVEAT_TITLES[caveat]}
-            label={CAVEAT_LABELS[caveat]}
-          />
-        ))}
-      </Stack>
+          {params.row.caveats.map((caveat) => (
+            <Chip
+              key={caveat}
+              size="small"
+              variant="outlined"
+              color={caveat === 'incomplete' ? 'warning' : 'default'}
+              title={CAVEAT_TITLES[caveat]}
+              label={CAVEAT_LABELS[caveat]}
+            />
+          ))}
+        </Stack>
+      </Tooltip>
     ),
   },
   {
