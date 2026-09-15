@@ -389,8 +389,11 @@ func (e *evaluator) expand(node *client.Node) []PathResult {
 		craftable = append(craftable, childPlan{
 			inputIdx: i,
 			runs:     ceilDiv(in.Quantity, outQty),
-			paths:    childPaths,
-			buyCost:  price * int64(in.Quantity),
+			// Only the paths that can still win are carried upward.
+			// Enumerating the rest multiplies work at every level above
+			// for combinations that are provably worse.
+			paths:   paretoPrune(childPaths),
+			buyCost: price * int64(in.Quantity),
 		})
 	}
 
@@ -426,6 +429,75 @@ func orderByBuyCost(craftable []childPlan) {
 		}
 		return craftable[i].inputIdx < craftable[j].inputIdx
 	})
+}
+
+// paretoPrune drops child paths that cannot improve any parent.
+//
+// A child reaches its parent through exactly three numbers: what it
+// costs to produce, how long it takes, and how much experience it
+// yields. Every metric the service reports is monotone in those three,
+// so if one path is no more expensive, no slower and no poorer in
+// experience than another, the other can never be part of a better
+// parent path — for any metric, at any depth. Dropping it is a proof,
+// not a budget.
+//
+// Complete and incomplete paths are pruned separately and never
+// compared. An incomplete path has an unpriced input costed at zero, so
+// its BuyCost is understated; letting it dominate a fully priced path
+// would discard the real answer in favour of a cheaper-looking fiction.
+func paretoPrune(paths []PathResult) []PathResult {
+	if len(paths) < 2 {
+		return paths
+	}
+	var complete, incomplete []PathResult
+	for _, p := range paths {
+		if p.Complete {
+			complete = append(complete, p)
+		} else {
+			incomplete = append(incomplete, p)
+		}
+	}
+	kept := paretoFront(complete)
+	return append(kept, paretoFront(incomplete)...)
+}
+
+// paretoFront keeps one representative of each non-dominated path.
+func paretoFront(paths []PathResult) []PathResult {
+	if len(paths) < 2 {
+		return paths
+	}
+	kept := make([]PathResult, 0, len(paths))
+	for i, cand := range paths {
+		dominated := false
+		for j, other := range paths {
+			if i == j {
+				continue
+			}
+			if !dominates(other, cand) {
+				continue
+			}
+			// Two paths identical on all three axes dominate each
+			// other; keeping the earlier one breaks the cycle so the
+			// result is neither empty nor order-dependent.
+			if dominates(cand, other) && j > i {
+				continue
+			}
+			dominated = true
+			break
+		}
+		if !dominated {
+			kept = append(kept, cand)
+		}
+	}
+	return kept
+}
+
+// dominates reports whether a is at least as good as b on cost, time
+// and experience together.
+func dominates(a, b PathResult) bool {
+	return a.BuyCost <= b.BuyCost &&
+		a.TotalHours <= b.TotalHours &&
+		a.TotalXP >= b.TotalXP
 }
 
 // enumerate builds the buy-vs-craft choice vectors. Index 0 means "buy
