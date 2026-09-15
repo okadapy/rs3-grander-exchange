@@ -8,7 +8,7 @@ function asRecord(value: unknown): GatewayFailure | null {
   return typeof value === 'object' && value !== null ? (value as GatewayFailure) : null;
 }
 
-function serviceName(target: unknown): string | null {
+export function serviceName(target: unknown): string | null {
   if (typeof target !== 'string') return null;
   return target.replace(/^https?:\/\//, '').split(':')[0];
 }
