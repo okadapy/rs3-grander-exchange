@@ -341,6 +341,10 @@ func TestTopCacheKeyVariesWithEveryInput(t *testing.T) {
 		"tax exempt": {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 5_000_000, TaxExemptBelow: 50, InventorySlots: 28, BankTripTicks: 21},
 		"inventory":  {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 5_000_000, TaxExemptBelow: 100, InventorySlots: 30, BankTripTicks: 21},
 		"bank trip":  {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 5_000_000, TaxExemptBelow: 100, InventorySlots: 28, BankTripTicks: 30},
+		// The house fallback rate is the number every aph_source=default
+		// row is built from, so an operator changing it must not be
+		// served the old ranking for the rest of the TTL.
+		"default aph": {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 5_000_000, TaxExemptBelow: 100, InventorySlots: 28, BankTripTicks: 21, DefaultActionsPerHour: 600},
 	}
 	for name, m := range marketVariants {
 		if topCacheKey(base, m) == key {

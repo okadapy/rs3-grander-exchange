@@ -820,10 +820,10 @@ func collectItemIDs(n *client.Node) []int64 {
 
 func cacheKey(itemID int64, opts Options, m Market) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|boosts=%s|%s",
+	fmt.Fprintf(h, "%d|aph=%d|p=%s|m=%s|inc=%v|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|defaph=%d|boosts=%s|%s",
 		itemID, opts.ActionsPerHourOverride, strings.ToLower(opts.Player), opts.Mode,
 		opts.IncludeIncomplete, m.SpreadPct, m.TaxPct, m.TaxCapPerItem,
-		m.TaxExemptBelow, m.InventorySlots, m.BankTripTicks,
+		m.TaxExemptBelow, m.InventorySlots, m.BankTripTicks, m.DefaultActionsPerHour,
 		strings.ToLower(opts.BoostsRaw), cacheVersion)
 	return "calc:" + hex.EncodeToString(h.Sum(nil))
 }

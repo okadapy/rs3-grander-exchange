@@ -285,11 +285,11 @@ func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error)
 // from the old model.
 func topCacheKey(opts TopOptions, m Market) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "metric=%s|skill=%s|limit=%d|aph=%d|p=%s|m=%s|inc=%v|boosts=%s|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|%s",
+	fmt.Fprintf(h, "metric=%s|skill=%s|limit=%d|aph=%d|p=%s|m=%s|inc=%v|boosts=%s|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|defaph=%d|%s",
 		opts.Metric, strings.ToLower(opts.Skill), opts.Limit,
 		opts.Calc.ActionsPerHourOverride, strings.ToLower(opts.Calc.Player), opts.Calc.Mode,
 		opts.Calc.IncludeIncomplete, strings.ToLower(opts.Calc.BoostsRaw),
 		m.SpreadPct, m.TaxPct, m.TaxCapPerItem, m.TaxExemptBelow,
-		m.InventorySlots, m.BankTripTicks, cacheVersion)
+		m.InventorySlots, m.BankTripTicks, m.DefaultActionsPerHour, cacheVersion)
 	return "top:" + hex.EncodeToString(h.Sum(nil))
 }

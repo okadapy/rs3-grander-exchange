@@ -26,19 +26,27 @@ func TestRoutesMatchOpenAPISpec(t *testing.T) {
 	}
 }
 
-// /calc/batch is a static sibling of /calc/:itemID. If the param route
-// were registered first, "batch" would be parsed as an item ID.
-func TestBatchRouteIsNotSwallowedByItemIDParam(t *testing.T) {
+// A request to /calc/batch must reach the batch handler rather than
+// /calc/:itemID with itemID="batch". As with the /calc/top test below,
+// the error body is what makes this load-bearing: both handlers reject
+// a bare request with a 400, but only h.batch asks for ids, while
+// h.calc says "invalid item id". Asserting only that both routes are
+// registered would hold whichever way round they are declared.
+func TestBatchRequestReachesTheBatchHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	New(nil, zap.NewNop()).Register(r)
 
-	routes := apicontract.RegisteredRoutes(r)
-	if !routes["GET /calc/batch"] {
-		t.Error("GET /calc/batch must be registered as a static route")
+	req := httptest.NewRequest(http.MethodGet, "/calc/batch", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("GET /calc/batch = %d, want 400 from the batch handler", w.Code)
 	}
-	if !routes["GET /calc/{itemID}"] {
-		t.Error("GET /calc/{itemID} must be registered")
+	if !strings.Contains(w.Body.String(), "ids") {
+		t.Errorf("error body = %s; want the batch handler's complaint about ids, "+
+			"not /calc/:itemID parsing \"batch\" as an item id", w.Body.String())
 	}
 }
 

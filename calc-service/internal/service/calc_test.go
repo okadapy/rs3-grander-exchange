@@ -521,6 +521,10 @@ func TestCacheKeyVariesWithAssumptions(t *testing.T) {
 		"spread": {SpreadPct: 3, TaxPct: 2, TaxCapPerItem: 5_000_000},
 		"tax":    {SpreadPct: 2, TaxPct: 1, TaxCapPerItem: 5_000_000},
 		"cap":    {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 1_000_000},
+		// Every aph_source=default result is this number times the XP or
+		// profit per action, so an operator retuning it must not keep
+		// serving the old figures out of the cache.
+		"default aph": {SpreadPct: 2, TaxPct: 2, TaxCapPerItem: 5_000_000, DefaultActionsPerHour: 600},
 	}
 	for name, m := range variants {
 		if cacheKey(100, opts, m) == key {
