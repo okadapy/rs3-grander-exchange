@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './auth/AuthProvider';
 import { theme } from './theme/theme';
+import { WsProvider } from './ws/WsProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -18,7 +19,9 @@ createRoot(document.getElementById('root')!).render(
         <CssBaseline />
         <BrowserRouter>
           <AuthProvider>
-            <App />
+            <WsProvider>
+              <App />
+            </WsProvider>
           </AuthProvider>
         </BrowserRouter>
       </ThemeProvider>

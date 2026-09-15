@@ -1,13 +1,106 @@
-import { Box, Paper, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Stack } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import type { ChatMessage } from '../../api/queries/chat';
+import { useChatHistory } from '../../api/queries/chat';
+import { useAuth } from '../../auth/AuthProvider';
+import { QueryState } from '../../shared/QueryState';
+import { useWs } from '../../ws/WsProvider';
+import { AuthPanel } from './AuthPanel';
+import { MessageComposer } from './MessageComposer';
+import { MessageList } from './MessageList';
 
-// Minimal placeholder for the bottom-right chat popup. Task 8 gives it real
-// behaviour (open/close, message list, sending); this only claims the slot
-// so the layout does not shift once chat becomes functional.
+// The socket only ever adds messages that are missing from history (see
+// WsProvider), but history can also load *after* a live message with the
+// same id has already arrived (e.g. the user's own echo lands, then the
+// `/chat/history` request that was already in flight resolves). Dedupe by
+// id on every merge so neither ordering produces a duplicate row.
+function mergeMessages(history: ChatMessage[], live: ChatMessage[]): ChatMessage[] {
+  const seen = new Set(history.map((message) => message.id));
+  return [...history, ...live.filter((message) => !seen.has(message.id))];
+}
+
+const PANEL_WIDTH = 360;
+const PANEL_HEIGHT = 480;
+
 export function ChatPopup() {
+  const { token, signOut } = useAuth();
+  const { status, messages: live, serverError, sendChat } = useWs();
+  const history = useChatHistory();
+
+  const [collapsed, setCollapsed] = useState(true);
+  const [unread, setUnread] = useState(0);
+  // Count of live messages already accounted for, either by having been
+  // shown (panel expanded) or already folded into the unread count. Only a
+  // ref because it must not itself trigger a render.
+  const seenCountRef = useRef(0);
+
+  useEffect(() => {
+    if (collapsed) {
+      const arrived = live.length - seenCountRef.current;
+      if (arrived > 0) {
+        seenCountRef.current = live.length;
+        setUnread((current) => current + arrived);
+      }
+    } else {
+      seenCountRef.current = live.length;
+      setUnread(0);
+    }
+  }, [live, collapsed]);
+
+  const toggleLabel =
+    collapsed && unread > 0 ? `Chat, ${unread} unread message${unread === 1 ? '' : 's'}` : 'Chat';
+
   return (
-    <Box sx={{ position: 'fixed', right: 16, bottom: 16 }}>
-      <Paper elevation={3} sx={{ px: 2, py: 1 }}>
-        <Typography variant="body2">Chat</Typography>
+    <Box sx={{ position: 'fixed', right: 16, bottom: 16, zIndex: (t) => t.zIndex.tooltip }}>
+      <Paper elevation={3} sx={{ width: collapsed ? 'auto' : PANEL_WIDTH, overflow: 'hidden' }}>
+        <Button
+          aria-label={toggleLabel}
+          onClick={() => setCollapsed((current) => !current)}
+          sx={{ width: '100%', justifyContent: 'flex-start', px: 2, py: 1 }}
+        >
+          Chat{unread > 0 && collapsed ? ` (${unread})` : ''}
+        </Button>
+
+        {!collapsed && (
+          <Stack
+            spacing={1.5}
+            sx={{
+              width: PANEL_WIDTH,
+              height: PANEL_HEIGHT,
+              boxSizing: 'border-box',
+              p: 2,
+              pt: 0,
+              overflowY: 'auto',
+            }}
+          >
+            <AuthPanel />
+
+            {status === 'unauthorized' && (
+              <Alert
+                severity="warning"
+                action={
+                  <Button size="small" onClick={signOut}>
+                    Sign out
+                  </Button>
+                }
+              >
+                Session is no longer valid. Sign in again.
+              </Alert>
+            )}
+            {status === 'closed' && token && (
+              <Alert severity="warning">Connection lost. Live messages are not arriving.</Alert>
+            )}
+            {serverError && <Alert severity="error">{serverError}</Alert>}
+
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              <QueryState query={history}>
+                {(data) => <MessageList messages={mergeMessages(data, live)} />}
+              </QueryState>
+            </Box>
+
+            {token && <MessageComposer disabled={status !== 'open'} onSend={sendChat} />}
+          </Stack>
+        )}
       </Paper>
     </Box>
   );

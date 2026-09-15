@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { beforeEach, expect, it } from 'vitest';
 import App from './App';
 import { server } from './test/msw/server';
 import { renderWithProviders } from './test/renderWithProviders';
@@ -10,6 +10,12 @@ function healthHandler() {
     HttpResponse.json({ gateway: 'ok', all_upstreams_ok: true, upstreams: [] }),
   );
 }
+
+// App always mounts ChatPopup (Task 8), which fetches chat history on mount
+// regardless of whether the popup is expanded.
+beforeEach(() => {
+  server.use(http.get('http://localhost:8080/chat/history', () => HttpResponse.json({ messages: [] })));
+});
 
 it('renders the character column and the recipe area on one screen', async () => {
   server.use(healthHandler());
