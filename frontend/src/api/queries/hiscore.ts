@@ -18,9 +18,9 @@ export function usePlayer(name: string, mode: HiscoreMode) {
         params: { path: { name }, query: { mode } },
       });
       if (response.status === 404) {
-        throw new Error('Игрок не найден или хайскоры недоступны');
+        throw new Error('Player not found or hiscores unavailable');
       }
-      if (error || !data) throw failure(response, error, 'Не удалось прочитать хайскоры');
+      if (error || !data) throw failure(response, error, 'Failed to read hiscores');
       return data;
     },
   });

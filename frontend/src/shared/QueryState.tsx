@@ -22,7 +22,7 @@ export function QueryState<T>({ query, empty, children }: Props<T>) {
       <Alert
         severity="error"
         sx={{ my: 2 }}
-        action={<Button size="small" onClick={() => void query.refetch()}>Повторить</Button>}
+        action={<Button size="small" onClick={() => void query.refetch()}>Retry</Button>}
       >
         <Typography variant="body2">{query.error.message}</Typography>
       </Alert>

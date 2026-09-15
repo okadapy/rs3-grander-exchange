@@ -19,11 +19,11 @@ export function describeFailure(status: number, body: unknown, fallback: string)
   // The gateway reports a service it could not reach as 502 plus the target.
   if (status === 502) {
     const name = serviceName(record?.target);
-    return name ? `Сервис ${name} недоступен` : 'Один из сервисов недоступен';
+    return name ? `Service ${name} is unavailable` : 'One of the services is unavailable';
   }
 
   // A transport failure never carries an HTTP status.
-  if (status === 0) return 'Нет связи со шлюзом';
+  if (status === 0) return 'No connection to the gateway';
 
   // A server-authored reason is a domain answer, not a breakage: show it as is.
   if (typeof record?.error === 'string') return record.error;

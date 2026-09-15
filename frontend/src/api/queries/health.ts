@@ -12,7 +12,7 @@ export function useGatewayHealth() {
     refetchInterval: 60_000,
     queryFn: async (): Promise<GatewayHealth> => {
       const { data, error, response } = await api.GET('/health/all');
-      if (error || !data) throw failure(response, error, 'Шлюз недоступен');
+      if (error || !data) throw failure(response, error, 'Gateway unavailable');
       return data;
     },
   });

@@ -12,50 +12,55 @@ import { usePlayerPrefs } from './usePlayerPrefs';
 const SKILL_LIST_MAX_HEIGHT = 440;
 
 const MODES: { value: HiscoreMode; label: string }[] = [
-  { value: 'normal', label: 'Обычный' },
+  { value: 'normal', label: 'Normal' },
   { value: 'ironman', label: 'Ironman' },
   { value: 'hardcore', label: 'Hardcore ironman' },
 ];
 
-export function CharacterPage() {
+interface Props {
+  onSelectSkill: (skill: string) => void;
+}
+
+export function CharacterColumn({ onSelectSkill }: Props) {
   const prefs = usePlayerPrefs();
   const [draft, setDraft] = useState(prefs.name);
   const query = usePlayer(prefs.name, prefs.mode);
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h5" component="h1">Персонаж</Typography>
+      <Typography variant="h5" component="h1">Character</Typography>
 
       {/* This MUI version dropped Stack's legacy alignItems/justifyContent
           passthrough props; they must go through sx or the DOM never gets
           the align-items rule and the value leaks as a bogus attribute. */}
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+      <Stack spacing={2} sx={{ alignItems: 'flex-start' }}>
         <TextField
-          label="Имя персонажа"
+          label="Player name"
           size="small"
+          fullWidth
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
         />
         <TextField
           select
-          label="Режим"
+          label="Mode"
           size="small"
+          fullWidth
           value={prefs.mode}
           onChange={(event) => prefs.setMode(event.target.value as HiscoreMode)}
-          sx={{ minWidth: 200 }}
         >
           {MODES.map((mode) => (
             <MenuItem key={mode.value} value={mode.value}>{mode.label}</MenuItem>
           ))}
         </TextField>
-        <Button variant="contained" onClick={() => prefs.setName(draft.trim())}>
-          Показать
+        <Button variant="contained" fullWidth onClick={() => prefs.setName(draft.trim())}>
+          Show
         </Button>
       </Stack>
 
       {prefs.name === '' ? (
         <Typography color="text.secondary">
-          Введите имя персонажа, чтобы увидеть уровни. Оно же подставится в расчёт рецептов.
+          Enter a player name to see their levels. It is also used for the recipe calculations.
         </Typography>
       ) : (
         <QueryState query={query}>
@@ -66,16 +71,16 @@ export function CharacterPage() {
             return (
               <Stack spacing={2}>
                 <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }} data-testid="player-summary">
+                    <Typography variant="h6" component="p">{player.name}</Typography>
+                    <Typography variant="body2" color="text.secondary">total level</Typography>
+                    <Typography variant="h6" component="p">{formatInt(overall?.level)}</Typography>
+                  </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    {player.name}, суммарный уровень
+                    {formatCompact(overall?.xp)} xp, rank {formatInt(overall?.rank)}
                   </Typography>
-                  <Typography variant="h4" component="p">{formatInt(overall?.level)}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {formatCompact(overall?.xp)} опыта, ранг {formatInt(overall?.rank)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Данные получены {new Date(player.fetched_at).toLocaleString('ru-RU')}.
-                    Если хайскоры недоступны, сервер отдаёт последнюю сохранённую копию.
+                  <Typography variant="caption" color="text.secondary" data-testid="fetched-at">
+                    Fetched {new Date(player.fetched_at).toLocaleString()}
                   </Typography>
                 </Paper>
 
@@ -89,7 +94,7 @@ export function CharacterPage() {
                   }}
                 >
                   {skills.map((skill) => (
-                    <SkillRow key={skill.skill} skill={skill} />
+                    <SkillRow key={skill.skill} skill={skill} onSelect={onSelectSkill} />
                   ))}
                 </Box>
               </Stack>

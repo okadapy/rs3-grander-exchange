@@ -15,6 +15,6 @@ export const api = createClient<paths>({ baseUrl: API_URL });
 // handle resolved-but-failed responses.
 api.use({
   onError() {
-    return new Error(describeFailure(0, undefined, 'Запрос не выполнен'));
+    return new Error(describeFailure(0, undefined, 'Request failed'));
   },
 });

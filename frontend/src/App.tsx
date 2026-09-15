@@ -1,43 +1,45 @@
-import { AppBar, Box, Button, Container, Stack, Toolbar, Typography } from '@mui/material';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { AppBar, Box, Toolbar, Typography } from '@mui/material';
+import { useState } from 'react';
 import { HealthIndicator } from './shared/HealthIndicator';
-import { CharacterPage } from './features/character/CharacterPage';
+import { CharacterColumn } from './features/character/CharacterPage';
 import { RecipesPage } from './features/recipes/RecipesPage';
-import { ChatPage } from './features/chat/ChatPage';
-
-const NAV = [
-  { to: '/character', label: 'Персонаж' },
-  { to: '/recipes', label: 'Рецепты' },
-  { to: '/chat', label: 'Чат' },
-];
+import { ChatPopup } from './features/chat/ChatPopup';
 
 export default function App() {
+  const [selectedSkill, setSelectedSkill] = useState('');
+
   return (
-    <Box sx={{ minHeight: '100vh' }}>
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="static" color="transparent" elevation={0}>
-        <Toolbar sx={{ gap: 3, borderBottom: 1, borderColor: 'divider' }}>
-          <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 700 }}>
+        <Toolbar sx={{ gap: 2, borderBottom: 1, borderColor: 'divider', minHeight: 52 }}>
+          <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 700, flexGrow: 1 }}>
             RS3 Market
           </Typography>
-          <Stack direction="row" spacing={1} sx={{ flexGrow: 1 }}>
-            {NAV.map((item) => (
-              <Button key={item.to} component={NavLink} to={item.to} color="inherit" size="small">
-                {item.label}
-              </Button>
-            ))}
-          </Stack>
           <HealthIndicator />
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth={false} sx={{ py: 3 }}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/character" replace />} />
-          <Route path="/character" element={<CharacterPage />} />
-          <Route path="/recipes" element={<RecipesPage />} />
-          <Route path="/chat" element={<ChatPage />} />
-        </Routes>
-      </Container>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <Box
+          component="aside"
+          sx={{
+            width: 320,
+            flexShrink: 0,
+            borderRight: 1,
+            borderColor: 'divider',
+            overflowY: 'auto',
+            p: 2,
+          }}
+        >
+          <CharacterColumn onSelectSkill={setSelectedSkill} />
+        </Box>
+
+        <Box component="main" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', p: 2 }}>
+          <RecipesPage skill={selectedSkill} onSkillChange={setSelectedSkill} />
+        </Box>
+      </Box>
+
+      <ChatPopup />
     </Box>
   );
 }

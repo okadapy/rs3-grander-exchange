@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { expect, it } from 'vitest';
 import App from './App';
 import { server } from './test/msw/server';
@@ -12,40 +11,41 @@ function healthHandler() {
   );
 }
 
-it('shows the three sections and opens the character page by default', async () => {
+it('renders the character column and the recipe area on one screen', async () => {
   server.use(healthHandler());
+  renderWithProviders(<App />);
 
-  renderWithProviders(<App />, { route: '/' });
-
-  expect(screen.getByRole('link', { name: 'Персонаж' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Рецепты' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Чат' })).toBeInTheDocument();
-  expect(await screen.findByRole('heading', { name: 'Персонаж' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Character' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Recipes' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Персонаж' })).not.toBeInTheDocument();
 });
 
-it('navigates to the recipes section', async () => {
+it('shows a green status dot when every upstream is healthy', async () => {
   server.use(healthHandler());
+  renderWithProviders(<App />);
 
-  renderWithProviders(<App />, { route: '/' });
-  await userEvent.click(screen.getByRole('link', { name: 'Рецепты' }));
-
-  expect(await screen.findByRole('heading', { name: 'Рецепты' })).toBeInTheDocument();
+  expect(await screen.findByLabelText('All services operational')).toBeInTheDocument();
+  expect(screen.queryByText(/Все сервисы/)).not.toBeInTheDocument();
 });
 
-it('reports the failing upstream when the gateway is degraded', async () => {
+it('shows an amber dot when some upstreams are down', async () => {
   server.use(
     http.get('http://localhost:8080/health/all', () =>
       HttpResponse.json({
         gateway: 'ok',
         all_upstreams_ok: false,
-        upstreams: [
-          { target: 'http://recipe-service:8082', ok: false, status: 0, error: 'connection refused', ms: 1 },
-        ],
+        upstreams: [{ target: 'http://recipe-service:8082', ok: false, status: 0, error: 'refused', ms: 1 }],
       }),
     ),
   );
+  renderWithProviders(<App />);
 
-  renderWithProviders(<App />, { route: '/' });
+  expect(await screen.findByLabelText(/Some services are not responding/)).toBeInTheDocument();
+});
 
-  expect(await screen.findByText(/recipe-service/)).toBeInTheDocument();
+it('shows a red dot when the gateway itself cannot be reached', async () => {
+  server.use(http.get('http://localhost:8080/health/all', () => HttpResponse.error()));
+  renderWithProviders(<App />);
+
+  expect(await screen.findByLabelText('Services unavailable')).toBeInTheDocument();
 });

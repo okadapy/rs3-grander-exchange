@@ -1,18 +1,10 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, expect, it } from 'vitest';
-import { useLocation } from 'react-router-dom';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { server } from '../../test/msw/server';
 import { renderWithProviders } from '../../test/renderWithProviders';
-import { CharacterPage } from './CharacterPage';
-
-// Reflects the router's current location as text so a click that navigates
-// can be asserted on without reaching into react-router internals.
-function LocationProbe() {
-  const location = useLocation();
-  return <div data-testid="location">{location.pathname + location.search}</div>;
-}
+import { CharacterColumn } from './CharacterPage';
 
 const PLAYER = {
   id: 2,
@@ -31,9 +23,9 @@ beforeEach(() => localStorage.clear());
 it('shows the overall summary and one tile per skill', async () => {
   server.use(http.get('http://localhost:8080/hiscore/Zezima', () => HttpResponse.json(PLAYER)));
 
-  renderWithProviders(<CharacterPage />);
-  await userEvent.type(screen.getByLabelText('Имя персонажа'), 'Zezima');
-  await userEvent.click(screen.getByRole('button', { name: 'Показать' }));
+  renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
 
   // formatInt (Task 2) groups thousands with a narrow no-break space, so the
   // rendered text is "3 232", not the literal digit string "3232".
@@ -45,14 +37,28 @@ it('shows the overall summary and one tile per skill', async () => {
   expect(screen.queryByText('Overall')).not.toBeInTheDocument();
 });
 
-it('always shows when the hiscore copy was fetched', async () => {
+it('puts the total level next to the player name', async () => {
   server.use(http.get('http://localhost:8080/hiscore/Zezima', () => HttpResponse.json(PLAYER)));
 
-  renderWithProviders(<CharacterPage />);
-  await userEvent.type(screen.getByLabelText('Имя персонажа'), 'Zezima');
-  await userEvent.click(screen.getByRole('button', { name: 'Показать' }));
+  renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
 
-  expect(await screen.findByText(/Данные получены/)).toBeInTheDocument();
+  const heading = await screen.findByTestId('player-summary');
+  expect(heading).toHaveTextContent('Zezima');
+  expect(heading).toHaveTextContent(/3\s*232/);
+});
+
+it('reports the fetch time quietly rather than prominently', async () => {
+  server.use(http.get('http://localhost:8080/hiscore/Zezima', () => HttpResponse.json(PLAYER)));
+
+  renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
+
+  const stamp = await screen.findByTestId('fetched-at');
+  expect(stamp).toBeInTheDocument();
+  expect(stamp).toHaveClass(/MuiTypography-caption/);
 });
 
 it('reports a missing player as the API describes it, not as a crash', async () => {
@@ -62,42 +68,36 @@ it('reports a missing player as the API describes it, not as a crash', async () 
     ),
   );
 
-  renderWithProviders(<CharacterPage />);
-  await userEvent.type(screen.getByLabelText('Имя персонажа'), 'Nobody');
-  await userEvent.click(screen.getByRole('button', { name: 'Показать' }));
+  renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Nobody');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
 
   expect(
-    await screen.findByText('Игрок не найден или хайскоры недоступны'),
+    await screen.findByText('Player not found or hiscores unavailable'),
   ).toBeInTheDocument();
 });
 
 it('remembers the last name across mounts', async () => {
   server.use(http.get('http://localhost:8080/hiscore/Zezima', () => HttpResponse.json(PLAYER)));
 
-  const first = renderWithProviders(<CharacterPage />);
-  await userEvent.type(screen.getByLabelText('Имя персонажа'), 'Zezima');
-  await userEvent.click(screen.getByRole('button', { name: 'Показать' }));
+  const first = renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
   await screen.findByText((content) => content.replace(/\s/g, '') === '3232');
   first.unmount();
 
-  renderWithProviders(<CharacterPage />);
-  expect(screen.getByLabelText('Имя персонажа')).toHaveValue('Zezima');
+  renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
+  expect(screen.getByLabelText('Player name')).toHaveValue('Zezima');
 });
 
-it('clicking a skill navigates to the recipes page filtered to that skill', async () => {
+it('reports a selected skill to the shell instead of navigating', async () => {
   server.use(http.get('http://localhost:8080/hiscore/Zezima', () => HttpResponse.json(PLAYER)));
+  const onSelectSkill = vi.fn();
 
-  renderWithProviders(
-    <>
-      <CharacterPage />
-      <LocationProbe />
-    </>,
-  );
-  await userEvent.type(screen.getByLabelText('Имя персонажа'), 'Zezima');
-  await userEvent.click(screen.getByRole('button', { name: 'Показать' }));
-  await screen.findByText('Crafting');
+  renderWithProviders(<CharacterColumn onSelectSkill={onSelectSkill} />);
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
+  await userEvent.click(await screen.findByRole('button', { name: /Crafting/ }));
 
-  await userEvent.click(screen.getByRole('link', { name: /Crafting/ }));
-
-  expect(screen.getByTestId('location')).toHaveTextContent('/recipes?skill=Crafting');
+  expect(onSelectSkill).toHaveBeenCalledWith('Crafting');
 });

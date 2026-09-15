@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setSession(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Неизвестная ошибка');
+      setError(cause instanceof Error ? cause.message : 'Unknown error');
     } finally {
       setPending(false);
     }
@@ -102,6 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const value = useContext(AuthContext);
-  if (!value) throw new Error('useAuth используется вне AuthProvider');
+  if (!value) throw new Error('useAuth used outside AuthProvider');
   return value;
 }

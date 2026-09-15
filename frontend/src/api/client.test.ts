@@ -17,8 +17,8 @@ it('reads the gateway health endpoint through the generated types', async () => 
   expect(data?.service).toBe('gateway');
 });
 
-it('translates a transport failure into the Russian "no connection" message', async () => {
+it('translates a transport failure into the "no connection" message', async () => {
   server.use(http.get('http://localhost:8080/health', () => HttpResponse.error()));
 
-  await expect(api.GET('/health')).rejects.toThrow('Нет связи со шлюзом');
+  await expect(api.GET('/health')).rejects.toThrow('No connection to the gateway');
 });

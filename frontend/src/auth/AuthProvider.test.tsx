@@ -9,13 +9,13 @@ function Probe() {
   const auth = useAuth();
   return (
     <div>
-      <span data-testid="token">{auth.token ?? 'нет токена'}</span>
-      <span data-testid="username">{auth.username ?? 'аноним'}</span>
+      <span data-testid="token">{auth.token ?? 'no token'}</span>
+      <span data-testid="username">{auth.username ?? 'anonymous'}</span>
       <span data-testid="error">{auth.error ?? ''}</span>
       <button onClick={() => void auth.signIn({ username: 'okadishe', password: 'secret123' })}>
-        Войти
+        Sign in
       </button>
-      <button onClick={() => auth.signOut()}>Выйти</button>
+      <button onClick={() => auth.signOut()}>Sign out</button>
     </div>
   );
 }
@@ -30,7 +30,7 @@ it('stores the token after a successful login and restores it on remount', async
   );
 
   const { unmount } = render(<AuthProvider><Probe /></AuthProvider>);
-  await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
   await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('jwt-abc'));
   expect(screen.getByTestId('username')).toHaveTextContent('okadishe');
@@ -48,10 +48,10 @@ it('surfaces invalid credentials without storing anything', async () => {
   );
 
   render(<AuthProvider><Probe /></AuthProvider>);
-  await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
   await waitFor(() => expect(screen.getByTestId('error')).toHaveTextContent('invalid credentials'));
-  expect(screen.getByTestId('token')).toHaveTextContent('нет токена');
+  expect(screen.getByTestId('token')).toHaveTextContent('no token');
   expect(localStorage.getItem('rs3.auth')).toBeNull();
 });
 
@@ -61,11 +61,11 @@ it('clears the stored session on sign out', async () => {
   );
 
   render(<AuthProvider><Probe /></AuthProvider>);
-  await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('jwt-abc'));
 
-  await userEvent.click(screen.getByRole('button', { name: 'Выйти' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
-  expect(screen.getByTestId('token')).toHaveTextContent('нет токена');
+  expect(screen.getByTestId('token')).toHaveTextContent('no token');
   expect(localStorage.getItem('rs3.auth')).toBeNull();
 });

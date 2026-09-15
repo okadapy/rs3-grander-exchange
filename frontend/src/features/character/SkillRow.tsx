@@ -1,8 +1,6 @@
-import { Box, LinearProgress, Typography } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { Box, ButtonBase, LinearProgress, Typography } from '@mui/material';
 import type { PlayerSkill } from '../../api/queries/hiscore';
 import { levelProgress } from '../../assets/experience';
-import { canonicalSkill } from '../../assets/skills';
 import { formatCompact, formatInt } from '../../shared/format';
 import { SkillIcon } from '../../shared/SkillIcon';
 
@@ -11,22 +9,20 @@ import { SkillIcon } from '../../shared/SkillIcon';
 // own flex container, so only identical literal widths guarantee the same
 // column edges row to row, independent of how long a neighbour's skill name
 // or numbers happen to be.
-export function SkillRow({ skill }: { skill: PlayerSkill }) {
-  const canonical = canonicalSkill(skill.skill);
-  const target = canonical ? `/recipes?skill=${encodeURIComponent(canonical)}` : '/recipes';
+export function SkillRow({ skill, onSelect }: { skill: PlayerSkill; onSelect: (skill: string) => void }) {
   const progress = levelProgress(skill.skill, skill.level, skill.xp);
 
   return (
-    <Box
-      component={Link}
-      to={target}
-      aria-label={`Показать рецепты по навыку ${skill.skill}`}
+    <ButtonBase
+      onClick={() => onSelect(skill.skill)}
+      aria-label={`Filter recipes by ${skill.skill}`}
       sx={{
         display: 'flex',
         alignItems: 'center',
         gap: 1.5,
         px: 1.5,
         py: 1,
+        width: '100%',
         textDecoration: 'none',
         color: 'inherit',
         borderBottom: 1,
@@ -62,7 +58,7 @@ export function SkillRow({ skill }: { skill: PlayerSkill }) {
         noWrap
         sx={{ width: 88, flexShrink: 0, textAlign: 'right' }}
       >
-        ранг {formatInt(skill.rank)}
+        rank {formatInt(skill.rank)}
       </Typography>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: 220, flexShrink: 0 }}>
@@ -77,9 +73,9 @@ export function SkillRow({ skill }: { skill: PlayerSkill }) {
           noWrap
           sx={{ width: 120, flexShrink: 0, textAlign: 'right' }}
         >
-          {progress.complete ? 'Максимум опыта' : `ещё ${formatCompact(progress.remainingXp)}`}
+          {progress.complete ? 'Max experience' : `${formatCompact(progress.remainingXp)} to go`}
         </Typography>
       </Box>
-    </Box>
+    </ButtonBase>
   );
 }

@@ -7,12 +7,12 @@ export type RegisteredUser = components['schemas']['RegisteredUser'];
 
 export async function login(credentials: Credentials): Promise<string> {
   const { data, error, response } = await api.POST('/auth/login', { body: credentials });
-  if (error || !data) throw failure(response, error, 'Не удалось войти');
+  if (error || !data) throw failure(response, error, 'Failed to sign in');
   return data.token;
 }
 
 export async function register(credentials: Credentials): Promise<RegisteredUser> {
   const { data, error, response } = await api.POST('/auth/register', { body: credentials });
-  if (error || !data) throw failure(response, error, 'Не удалось зарегистрироваться');
+  if (error || !data) throw failure(response, error, 'Failed to register');
   return data;
 }
