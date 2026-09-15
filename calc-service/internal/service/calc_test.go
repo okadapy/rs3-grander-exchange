@@ -676,3 +676,43 @@ func TestPathWithNonFiniteFiguresNeverReachesTheSerialiser(t *testing.T) {
 		}
 	}
 }
+
+// enumerate buys whatever it runs out of budget for, so the order of
+// the inputs decides which decision is examined and which is assumed.
+// These are the real numbers from Rune platebody + 3: twenty Rune bars
+// against one Rune platebody + 2, with the bars listed first by the
+// scrape. Left in that order every path buys the + 2, which is the
+// costliest input in the recipe and the one worth costing.
+func TestOrderByBuyCostExaminesTheExpensiveInputFirst(t *testing.T) {
+	craftable := []childPlan{
+		{inputIdx: 0, buyCost: 103_660}, // Rune bar x20
+		{inputIdx: 1, buyCost: 136_154}, // Rune platebody + 2
+	}
+	orderByBuyCost(craftable)
+
+	if craftable[0].inputIdx != 1 {
+		t.Errorf("first input is %d, want the Rune platebody + 2 at index 1 — "+
+			"the enumeration budget must go to the costliest decision, not to "+
+			"whichever input the scrape happened to list first", craftable[0].inputIdx)
+	}
+}
+
+// Two inputs of equal cost must not change places between identical
+// requests; the unpriced case, where every cost is zero, is the common
+// one and it must stay in scrape order.
+func TestOrderByBuyCostIsDeterministicOnTies(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		craftable := []childPlan{
+			{inputIdx: 2, buyCost: 500},
+			{inputIdx: 0, buyCost: 500},
+			{inputIdx: 1, buyCost: 500},
+		}
+		orderByBuyCost(craftable)
+		for want, got := range []int{0, 1, 2} {
+			if craftable[want].inputIdx != got {
+				t.Fatalf("position %d holds input %d, want %d",
+					want, craftable[want].inputIdx, got)
+			}
+		}
+	}
+}

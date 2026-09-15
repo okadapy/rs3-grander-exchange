@@ -355,6 +355,9 @@ type childPlan struct {
 	inputIdx int
 	runs     int
 	paths    []PathResult
+	// buyCost is what this input costs if bought outright, and it is
+	// only ever used to rank the inputs for the enumeration budget.
+	buyCost int64
 }
 
 // expand returns every distinct way to produce the item at node.
@@ -382,13 +385,16 @@ func (e *evaluator) expand(node *client.Node) []PathResult {
 		if outQty < 1 {
 			outQty = 1
 		}
+		price, _ := e.guidePrice(in.ItemID)
 		craftable = append(craftable, childPlan{
 			inputIdx: i,
 			runs:     ceilDiv(in.Quantity, outQty),
 			paths:    childPaths,
+			buyCost:  price * int64(in.Quantity),
 		})
 	}
 
+	orderByBuyCost(craftable)
 	assignments := enumerate(craftable)
 	out := make([]PathResult, 0, len(assignments))
 	for _, a := range assignments {
@@ -397,6 +403,29 @@ func (e *evaluator) expand(node *client.Node) []PathResult {
 		}
 	}
 	return out
+}
+
+// orderByBuyCost puts the most expensive input first.
+//
+// enumerate spends a fixed budget of combinations and buys whatever it
+// runs out of room for, so the order decides which input's alternatives
+// are costed and which are assumed bought. Left in scrape order that
+// choice is arbitrary: a Rune platebody + 3 takes twenty Rune bars
+// (103,660) and one Rune platebody + 2 (136,154), the bars happen to be
+// listed first, and every path therefore buys the + 2 — the single
+// costliest decision in the recipe is the one never examined. Ranking by
+// what the input costs to buy spends the budget where the answer can
+// move most.
+//
+// inputIdx breaks ties so the enumeration is deterministic for two
+// inputs of equal cost, including the common case of no price at all.
+func orderByBuyCost(craftable []childPlan) {
+	sort.SliceStable(craftable, func(i, j int) bool {
+		if craftable[i].buyCost != craftable[j].buyCost {
+			return craftable[i].buyCost > craftable[j].buyCost
+		}
+		return craftable[i].inputIdx < craftable[j].inputIdx
+	})
 }
 
 // enumerate builds the buy-vs-craft choice vectors. Index 0 means "buy
