@@ -4867,3 +4867,217 @@ it('clears the unread count once expanded', async () => {
 ```
 
 ---
+
+---
+
+## Tasks 9-11 amendment: English copy, skill as a prop, all crafts by default
+
+The bodies of `task-9-brief.md`, `task-10-brief.md` and `task-11-brief.md`
+were written before the single-screen redesign. Their **structure, file
+layout, function signatures, row-building logic, column set and test cases
+remain correct** and are your requirements. Three things in them are stale.
+Where this amendment and a brief disagree, **this amendment wins**.
+
+Task 9's brief needs no change; it is listed here only because you build it
+in the same dispatch and `RecipeRow` is what Tasks 10 and 11 consume.
+
+---
+
+## Delta A — every user-facing string is English
+
+The application has no Russian UI text left; the other twelve tasks are
+already translated and `App.test.tsx` asserts the Russian copy is gone. The
+briefs' Russian strings are the last of it. Translate **every** user-visible
+string you write — labels, headers, tooltips, chips, empty states, error
+fallbacks, and the strings inside test assertions.
+
+Use exactly these, so the tests and the UI agree:
+
+| Brief (Russian) | Use this |
+|---|---|
+| `Скилл` (filter label and column header) | `Skill` |
+| `Уровень от` | `Min level` |
+| `Уровень до` | `Max level` |
+| `Спред, %` | `Spread, %` |
+| `Показывать пути с неоценёнными входами` | `Include paths with unpriced inputs` |
+| `Предмет` | `Item` |
+| `Уровень` (column header) | `Level` |
+| `Цена` | `Price` |
+| `Компоненты` | `Components` |
+| `Маржа` | `Margin` |
+| `XP/ч` | `XP/h` |
+| `GP/ч` | `GP/h` |
+| `GP/XP` | `GP/XP` (unchanged) |
+| `GP/ч по лимиту` | `GP/h capped` |
+| `Ликвидность` | `Liquidity` |
+| `нет данных` | `no data` |
+| `Не оценены: {list}` | `Unpriced: {list}` |
+| `Связывающий вход: {name}` | `Binding input: {name}` |
+| `Лимит покупки неизвестен` | `Buy limit unknown` |
+| `Наблюдений: {n}, средний объём {v}` | `Observations: {n}, average volume {v}` |
+| caveat title `incomplete` | `Some inputs are unpriced and counted as zero — the margin is an upper bound` |
+| caveat title `default-aph` | `Action rate assumed by the server, not measured` |
+| caveat title `no-throughput` | `Buy limit unknown, throughput cap not computed` |
+| caveat label `incomplete` | `incomplete` |
+| caveat label `default-aph` | `default APH` |
+| caveat label `no-throughput` | `uncapped` |
+| `Сортировка работает в пределах загруженной страницы` | `Sorting applies within the loaded page` |
+| `Цена — гайдовая цена Grand Exchange. Спред {s}, налог {t}, потолок налога {c}, освобождение ниже {e}. GP/ч без этих допущений не имеет смысла.` | `Price is the Grand Exchange guide price. Spread {s}, tax {t}, tax cap {c}, exempt below {e}. GP/h is meaningless without these assumptions.` |
+| `Не удалось загрузить рецепты` | `Could not load recipes` |
+| `Не удалось загрузить список предметов` | `Could not load the item list` |
+| any other query-failure fallback | translate literally, sentence case, no trailing period |
+
+Test assertions in the briefs quote the Russian strings (e.g.
+`getByLabelText('Скилл')`, `findByText(/Спред 2\.0%/)`). Update each to its
+English counterpart from this table. Keep the assertion's shape — do not
+weaken a regex into a substring match while translating it.
+
+## Delta B — the selected skill is a prop, not a URL parameter
+
+There are no routes and no separate pages. The application is one screen: a
+character column on the left, the recipe table in the centre, a chat popup
+overlay. `App.tsx` owns the selected skill as state and passes it down;
+clicking a skill in the character column sets it.
+
+`RecipesPage.tsx` already exists as a placeholder with the correct
+signature — keep it:
+
+```tsx
+interface Props {
+  skill: string;
+  onSkillChange: (skill: string) => void;
+}
+
+export function RecipesPage({ skill, onSkillChange }: Props)
+```
+
+So, in Task 11 Step 6:
+
+- **Delete** `import { useSearchParams } from 'react-router-dom';` and the
+  `const [search] = useSearchParams();` line. `RecipesPage` must not import
+  from `react-router-dom` at all.
+- The filter state's `skill` is no longer local. Derive it from the prop and
+  push changes up:
+
+```tsx
+const filters: FiltersValue = { ...localFilters, skill };
+const handleFilters = (next: FiltersValue) => {
+  if (next.skill !== skill) onSkillChange(next.skill);
+  setLocalFilters(next);
+};
+```
+
+  where `localFilters` is the `useState` holding only `minLevel`, `maxLevel`,
+  `includeIncomplete` and `spreadPct`. `FiltersValue` keeps all five fields —
+  `RecipeFilters` is unchanged and still renders the skill selector.
+- Validate the incoming prop with `canonicalSkill`, exactly as the brief
+  already does for the URL value: `canonicalSkill(skill) ?? ''`. A skill the
+  shell hands down that is not one of the 29 canonical names falls back to
+  "all skills" rather than querying for it.
+- Reset `page` to 0 when `skill` changes, or a deep page from a previous
+  skill survives into a shorter result set.
+
+Add this test to `RecipesPage.test.tsx`:
+
+```tsx
+it('filters by the skill the shell selects and reports changes upward', async () => {
+  const onSkillChange = vi.fn();
+  const { rerender } = renderWithProviders(
+    <RecipesPage skill="" onSkillChange={onSkillChange} />,
+  );
+  // ...assert an unfiltered request went out, then:
+  rerender(<RecipesPage skill="Crafting" onSkillChange={onSkillChange} />);
+  // ...assert the next request carries skill=Crafting.
+});
+```
+
+## Delta C — no skill selected means every craft, not an empty table
+
+The brief's `Выберите скилл, чтобы увидеть рецепты.` empty state is removed
+entirely. With no skill selected the table shows all crafts.
+
+This is implementable against the current API: `skill` is **optional** on
+both `GET /recipes` and `GET /recipes/ids` (verified in `combined.yaml`
+lines 108-138 and 139-178). Omitting it returns every recipe.
+
+In Task 10:
+
+- Drop `enabled: skill.length > 0` from **both** `useSkillRecipes` and
+  `usePriceableItemIds`. They always run.
+- Omit the `skill` query parameter when the skill is empty, rather than
+  sending `skill=`:
+
+```ts
+params: { query: { ...(skill ? { skill } : {}), level: maxLevel } },
+```
+
+  and the same shape in `usePriceableItemIds`.
+- Replace the brief's test `it('does not query while no skill is chosen')`
+  — that behaviour is gone — with:
+
+```ts
+it('omits the skill parameter when no skill is chosen', async () => {
+  let seen = '';
+  server.use(
+    http.get('http://localhost:8080/recipes', ({ request }) => {
+      seen = new URL(request.url).search;
+      return HttpResponse.json({ count: 1, recipes: [recipe()] });
+    }),
+  );
+
+  const { result } = renderHook(() => useSkillRecipes('', 99), { wrapper });
+
+  await waitFor(() => expect(result.current.data).toHaveLength(1));
+  expect(seen).not.toContain('skill');
+  expect(seen).toContain('level=99');
+});
+```
+
+- The query keys already carry `skill` as their second element, so `''` and
+  `'Crafting'` cache separately. No change needed there.
+
+In Task 11:
+
+- `RecipeFilters`' skill selector gains a first option for the unfiltered
+  case, so the user can get back to it after choosing a skill:
+
+```tsx
+<MenuItem value="">All skills</MenuItem>
+```
+
+  placed before the `SKILLS.map(...)`. The `TextField` keeps
+  `label="Skill"`; an empty `value` renders as `All skills`.
+- Replace the brief's "select a skill" empty-state test with:
+
+```tsx
+it('shows every craft when no skill is selected', async () => {
+  renderWithProviders(<RecipesPage skill="" onSkillChange={() => {}} />);
+  expect(await screen.findByText('Yew longbow')).toBeInTheDocument();
+  expect(screen.getByText('Rune platebody')).toBeInTheDocument();
+});
+```
+
+  with MSW returning two recipes of **different skills** from an
+  unfiltered `/recipes`, proving no client-side skill filter is applied.
+- Note the cost so a later reader understands the trade-off: unfiltered
+  `/recipes` is a single ~4 MB body. It is fetched once and cached for an
+  hour by the existing `staleTime`, and the table pages client-side at 25
+  rows, so only 25 rows are ever sent to `/calc`. Put that in a short
+  comment above the `backbone` memo — one sentence, not an essay.
+
+---
+
+## Unchanged and still binding
+
+- `RecipeRow`'s field names are consumed verbatim as DataGrid column
+  fields by Task 12. Do not rename them.
+- The reason an unpriceable row is unpriceable is stated **once**, in the
+  item column. Money columns render an em dash so a row never reads as a
+  zero margin.
+- MUI 9's `Stack` accepts only `children`, `component`, `direction`,
+  `divider`, `spacing`, `sx` and `useFlexGap`. `alignItems`,
+  `justifyContent` and `flexWrap` go in `sx` — the briefs already do this
+  correctly; keep it that way in anything you add.
+- The recipe table is the centre zone of the screen. It must not set a
+  fixed width or overflow its column; `App.tsx` gives it `flex: 1` and
+  `minWidth: 0`.
