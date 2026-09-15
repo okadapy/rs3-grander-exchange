@@ -16,6 +16,7 @@
 - Exact dependency versions (verified against the npm registry on 2026-09-15): vite 8.3.0, @vitejs/plugin-react 6.1.1, typescript 7.0.2, react 19.3.0, react-dom 19.3.0, @mui/material 9.4.0, @mui/x-data-grid 9.13.0, @emotion/react 11.14.0, @emotion/styled 11.14.1, @tanstack/react-query 5.102.8, react-router-dom 7.18.3, openapi-typescript 7.13.0, openapi-fetch 0.17.0, vitest 5.0.1, jsdom 30.0.1, msw 2.15.0, @testing-library/react 16.3.3.
 - If TypeScript 7.0.2 produces errors inside `node_modules` type definitions rather than in our own code, downgrade to `typescript@5.9.3` and note it in the commit message. Do not work around such errors with `any` or `@ts-ignore`.
 - No emoji anywhere — not in UI copy, not in commit messages, not in code comments.
+- MUI 9's `Stack` accepts only `children`, `component`, `direction`, `divider`, `spacing`, `sx` and `useFlexGap`. Layout properties such as `alignItems`, `justifyContent` and `flexWrap` are NOT forwarded as system props — passing them leaks a bogus DOM attribute and the CSS silently never applies. Put them in `sx`. Verified against the installed `@mui/material/Stack/Stack.js` propTypes on 2026-09-15.
 - TypeScript runs in `strict` mode. No `any`, no `@ts-ignore`, no non-null assertion (`!`) to silence a real nullability case from the schema.
 - No module outside `src/api/` imports `openapi-fetch` or calls `fetch` directly. No module anywhere hand-declares an API response interface — import it from `src/api/schema.d.ts`.
 - Money, XP and percentage values reaching the screen go through `src/shared/format.ts`. No inline `toFixed` or `toLocaleString` in components.
@@ -1726,7 +1727,7 @@ import { formatCompact, formatInt } from '../../shared/format';
 export function SkillTile({ skill }: { skill: PlayerSkill }) {
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
-      <Stack direction="row" spacing={1} alignItems="center">
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         <SkillIcon skill={skill.skill} size={24} />
         <Stack sx={{ minWidth: 0 }}>
           <Typography variant="body2" noWrap>{skill.skill}</Typography>
@@ -1772,7 +1773,7 @@ export function CharacterPage() {
     <Stack spacing={3}>
       <Typography variant="h5" component="h1">Персонаж</Typography>
 
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
         <TextField
           label="Имя персонажа"
           size="small"
@@ -2639,7 +2640,7 @@ export function MessageList({ messages }: { messages: ChatMessage[] }) {
     <Stack spacing={1.5}>
       {messages.map((message) => (
         <Box key={message.id}>
-          <Stack direction="row" spacing={1} alignItems="baseline">
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
             <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>
               {message.username}
             </Typography>
@@ -2715,7 +2716,7 @@ export function AuthPanel() {
   if (username) {
     return (
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
           <Typography variant="body2">Вы вошли как {username}</Typography>
           <Button size="small" onClick={signOut}>Выйти</Button>
         </Stack>
@@ -3761,7 +3762,7 @@ interface Props {
 
 export function RecipeFilters({ value, onChange }: Props) {
   return (
-    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+    <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
       <TextField
         select
         label="Скилл"
@@ -3862,7 +3863,7 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     headerName: 'Скилл',
     width: 110,
     renderCell: (params: GridRenderCellParams<RecipeRow, string>) => (
-      <Stack direction="row" spacing={0.5} alignItems="center">
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
         <SkillIcon skill={params.row.skill} />
         <Typography variant="body2">{params.row.skill}</Typography>
       </Stack>
@@ -3874,7 +3875,7 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     flex: 1,
     minWidth: 220,
     renderCell: (params: GridRenderCellParams<RecipeRow, string>) => (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
         <ItemIcon itemId={params.row.itemId} name={params.row.itemName} />
         <Typography variant="body2" noWrap>{params.row.itemName}</Typography>
 
@@ -4123,7 +4124,7 @@ export function RecipesPage() {
             />
           </Box>
 
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
             <Button size="small" disabled={page === 0} onClick={() => setPage(page - 1)}>
               Назад
             </Button>
