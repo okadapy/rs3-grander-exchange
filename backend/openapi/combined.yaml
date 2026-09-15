@@ -1,0 +1,1949 @@
+openapi: 3.1.0
+
+info:
+  title: RS3 Market API
+  version: 2.0.0
+  description: |
+    Grand Exchange market analysis for RuneScape 3: scraped crafting
+    recipes, Grand Exchange price history, tradeability signals, and a
+    profitability calculator that walks a recipe tree and prices every
+    way to produce an item.
+
+    This document describes the **gateway** surface. Every path here is
+    reachable on the single gateway origin below; the gateway proxies to
+    the service that owns it. Individual services also serve their own
+    spec on `/swagger`, but those are for debugging one service in
+    isolation — this is the contract a frontend should generate from.
+
+    ## Reading the price data
+
+    The Grand Exchange publishes exactly one number per item: a **guide
+    price**. RS3 has no public instant-buy / instant-sell feed, so there
+    is no real bid/ask spread anywhere in this data, and `PriceSnapshot`
+    deliberately carries a single `price` field rather than a buy and a
+    sell that would be equal.
+
+    Anything that needs both sides of a trade applies an explicit spread
+    assumption on top of the guide price. `/calc` does this, and reports
+    the assumption it used in `CalcResult.assumptions` — a GP/h figure
+    from this API is never meaningful without the assumptions block next
+    to it.
+
+    ## Reading the profitability data
+
+    Three fields decide whether a `CalcPath` is worth acting on, and all
+    three can make a large headline margin worthless:
+
+    - `complete` — `false` means some input had no price and was costed
+      at zero, so the margin is an upper bound, not an estimate. These
+      paths are excluded unless you pass `include_incomplete=true`.
+    - `throughput` — the Grand Exchange 4-hour buy limit on the binding
+      input, and the GP/h that limit actually permits. Frequently an
+      order of magnitude below `gp_per_hour`.
+    - `aph_source` — `default` means actions-per-hour is a house
+      assumption rather than a measured rate, because the wiki rarely
+      publishes one. Good for ranking recipes against each other, not
+      for quoting a literal rate.
+
+servers:
+  - url: http://localhost:8080
+    description: Local gateway
+
+# The HTTP surface is unauthenticated. The only credential in the system
+# is the JWT passed as a query parameter when opening the WebSocket,
+# which is not an HTTP security scheme.
+security: []
+
+tags:
+  - name: health
+    description: Liveness and upstream status.
+  - name: recipes
+    description: Crafting recipes scraped from the RuneScape Wiki.
+  - name: items
+    description: Item lookup and Grand Exchange buy limits.
+  - name: prices
+    description: Grand Exchange price history and tradeability signals.
+  - name: calc
+    description: Profitability of producing an item.
+  - name: hiscore
+    description: RS3 hiscores lookup.
+  - name: auth
+    description: Account registration and login for chat.
+  - name: chat
+    description: Chat history and the realtime socket.
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Gateway liveness
+      responses:
+        '200':
+          description: Gateway is up.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /health/all:
+    get:
+      tags: [health]
+      operationId: getUpstreamHealth
+      summary: Liveness of every upstream service
+      responses:
+        '200':
+          description: All upstreams healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayHealth'
+        '503':
+          description: At least one upstream is unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayHealth'
+
+  /recipes:
+    get:
+      tags: [recipes]
+      operationId: listRecipes
+      summary: List recipes
+      description: |
+        Returns full recipes including their inputs. Unpaginated — use
+        `/search/recipes` for anything user-facing.
+      parameters:
+        - name: skill
+          in: query
+          description: Exact skill name, e.g. `Crafting`.
+          schema:
+            type: string
+        - name: level
+          in: query
+          description: Upper bound on the recipe's level requirement.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+      responses:
+        '200':
+          description: Matching recipes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeListResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /recipes/ids:
+    get:
+      tags: [recipes]
+      operationId: listRecipeOutputItemIds
+      summary: Output item IDs for matching recipes
+      description: |
+        Distinct output item IDs, filtered by skill and level range.
+        Recipes whose output item ID is still unresolved are excluded,
+        so every ID returned here can be priced.
+      parameters:
+        - name: skill
+          in: query
+          schema:
+            type: string
+        - name: min_level
+          in: query
+          description: Inclusive lower bound on the level requirement.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+        - name: level
+          in: query
+          description: Inclusive upper bound on the level requirement.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+      responses:
+        '200':
+          description: Matching output item IDs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeIdsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /recipes/{itemID}:
+    get:
+      tags: [recipes]
+      operationId: getRecipeTree
+      summary: Recipe tree for an item
+      description: |
+        Resolves every intermediate recipe needed to produce the item.
+        Identical to `/recipes/{itemID}/tree`.
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+      responses:
+        '200':
+          description: The recipe tree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeTree'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /recipes/{itemID}/tree:
+    get:
+      tags: [recipes]
+      operationId: getRecipeTreeExplicit
+      summary: Recipe tree for an item
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+      responses:
+        '200':
+          description: The recipe tree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeTree'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /search/recipes:
+    get:
+      tags: [recipes]
+      operationId: searchRecipes
+      summary: Search recipes by name
+      description: |
+        Paginated recipe summaries. Inputs are **not** included — fetch
+        `/recipes/{itemID}` for the full tree.
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the recipe or output name.
+          schema:
+            type: string
+        - name: skill
+          in: query
+          schema:
+            type: string
+        - name: min_level
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+        - name: level
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching recipes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /search/items:
+    get:
+      tags: [items]
+      operationId: searchItems
+      summary: Search items by name
+      description: |
+        Searches every item that appears as a recipe output or a recipe
+        input. `sources` says which side each item was found on.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            $ref: '#/components/schemas/ItemSource'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /items/limits:
+    get:
+      tags: [items]
+      operationId: getBuyLimits
+      summary: Grand Exchange 4-hour buy limits
+      description: |
+        Items with no known limit are **omitted** from the map rather
+        than returned as zero, so "unknown" is distinguishable from
+        "limited to nothing".
+      parameters:
+        - $ref: '#/components/parameters/ItemIdsQuery'
+      responses:
+        '200':
+          description: Known buy limits, keyed by item ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuyLimitsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /prices/latest:
+    get:
+      tags: [prices]
+      operationId: getLatestPrices
+      summary: Latest price snapshot per item
+      parameters:
+        - $ref: '#/components/parameters/ItemIdsQuery'
+      responses:
+        '200':
+          description: Latest snapshots. Items never polled are absent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestPricesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /prices/history/{itemID}:
+    get:
+      tags: [prices]
+      operationId: getPriceHistory
+      summary: Price history for one item
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+        - name: from
+          in: query
+          description: RFC3339 start of the window. Defaults to 7 days ago.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: RFC3339 end of the window. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Snapshots in ascending time order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /prices/change/{itemID}:
+    get:
+      tags: [prices]
+      operationId: getPriceChange
+      summary: Price movement over a window
+      description: |
+        Check `has_baseline` before trusting `change_pct`: `false` means
+        we have no history reaching back that far, which is a different
+        statement from "the price did not move".
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+        - $ref: '#/components/parameters/Window'
+      responses:
+        '200':
+          description: The price change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceChange'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /prices/stats/{itemID}:
+    get:
+      tags: [prices]
+      operationId: getPriceStats
+      summary: Tradeability and liquidity signals
+      description: |
+        Whether an item can actually be traded at size, derived from
+        stored snapshots plus its buy limit.
+
+        A margin alone is not a trading signal: a large margin on an item
+        that trades twice a day looks identical, in a plain profit
+        listing, to the same margin on one that moves millions of units.
+        Sort or filter by `score` and `tier` to tell them apart, and read
+        `observations` to see how much data the score is built on.
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+        - $ref: '#/components/parameters/Window'
+      responses:
+        '200':
+          description: |
+            Liquidity statistics. An item with no stored history returns
+            a zeroed block with `tier: unknown` rather than a 404.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiquidityStats'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /calc/{itemID}:
+    get:
+      tags: [calc]
+      operationId: calculateItem
+      summary: Profitability of every way to produce an item
+      description: |
+        Walks the recipe tree and evaluates each combination of buying
+        versus crafting each input, returning one `CalcPath` per
+        strategy, best first.
+
+        Ranking puts paths the player can actually perform first (when
+        `player` is supplied), then complete paths, then by the
+        throughput-limited GP/h where a buy limit is known.
+      parameters:
+        - $ref: '#/components/parameters/ItemIdPath'
+        - name: aph
+          in: query
+          description: |
+            Override actions-per-hour for every step. Omit to use each
+            recipe's own value.
+          schema:
+            type: integer
+            minimum: 0
+        - name: spread_pct
+          in: query
+          description: |
+            Override the assumed round-trip buy/sell spread, as a
+            percentage of the guide price. Omit to use the server
+            default.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 100
+        - name: player
+          in: query
+          description: |
+            RS3 display name. When supplied, each path is annotated with
+            the skill levels it needs and whether this player has them.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/HiscoreMode'
+        - name: include_incomplete
+          in: query
+          description: |
+            Include paths with an input we could not price. Their money
+            figures are upper bounds — the unpriced input is costed at
+            zero — so they are excluded by default.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/CalcBoosts'
+      responses:
+        '200':
+          description: Ranked production strategies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalcResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: No recipe exists for this item, or none can be priced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /calc/batch:
+    get:
+      tags: [calc]
+      operationId: calculateBatch
+      summary: Profitability for several items at once
+      description: |
+        Errors are reported per entry, so one unpriceable item does not
+        fail the request.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated item IDs.
+          schema:
+            type: string
+          example: "1513,1515,2363"
+        - name: aph
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: spread_pct
+          in: query
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 100
+        - name: player
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/HiscoreMode'
+        - name: include_incomplete
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/CalcBoosts'
+      responses:
+        '200':
+          description: One entry per requested item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalcBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /calc/top:
+    get:
+      tags: [calc]
+      operationId: calculateTop
+      summary: The catalogue ranked by one headline metric
+      description: |
+        Walks every priceable recipe — around 5800 of them — and returns
+        the best path for each, ranked by `metric`. Answers from cache
+        on anything but the first call for a given parameter set.
+
+        `metric` is required; there is no default, because asking for a
+        ranking without saying of what is a mistake worth reporting
+        rather than guessing at.
+
+        `gp_per_hour` ranks on `gp_per_hour_limited`, the buy-limit-bound
+        rate, not the raw `gp_per_hour`. The raw figure multiplies one
+        craft's profit by a full hour of actions, which floats items
+        nobody can produce at that rate — a godsword nobody forges six
+        hundred times an hour — above the things people actually craft.
+
+        When `player` is supplied, recipes that player's levels cannot
+        perform are dropped from the ranking entirely. A leaderboard is
+        read as a list of things to go and do, and the highest-XP
+        recipes in the game are end-game chains a mid-level account will
+        never reach; they are also the ones whose rate falls back to the
+        house default, because the level gate that refuses them refuses
+        to derive a tick cost as well. Left in, they crowd out the
+        reachable items with a server-invented number. Every row
+        returned therefore has `meets_requirements: true`.
+
+        Without a `player` there is nothing to compare levels against,
+        so the whole catalogue ranks and `meets_requirements` is absent.
+
+        An item whose calculation fails (no priceable path, upstream
+        error) is simply absent from the ranking rather than failing the
+        whole request, the same reasoning `/calc/batch` uses to report
+        failures per entry.
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          description: What to rank by. No default.
+          schema:
+            $ref: '#/components/schemas/TopMetric'
+        - name: player
+          in: query
+          description: |
+            RS3 display name. When supplied, actions-per-hour for
+            Smithing recipes is derived from this player's levels where
+            the mechanics allow it.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/HiscoreMode'
+        - name: skill
+          in: query
+          description: Restrict the ranking to recipes of this skill.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: |
+            Rows to return. `0` or omitted uses the default of 20; a
+            value above 100 is clamped to 100 rather than rejected.
+          schema:
+            type: integer
+            minimum: 0
+            default: 20
+        - name: aph
+          in: query
+          description: |
+            Override actions-per-hour for every step of every path.
+            Omit to use each recipe's own value — the mechanics-derived
+            rates this ranking is built on.
+          schema:
+            type: integer
+            minimum: 0
+        - name: spread_pct
+          in: query
+          description: |
+            Override the assumed round-trip buy/sell spread, as a
+            percentage of the guide price. Omit to use the server
+            default.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 100
+        - name: include_incomplete
+          in: query
+          description: |
+            Include paths with an input we could not price. Their money
+            figures are upper bounds, so they are excluded by default.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/CalcBoosts'
+      responses:
+        '200':
+          description: The catalogue ranked by `metric`, best first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /hiscore/{name}:
+    get:
+      tags: [hiscore]
+      operationId: getPlayerHiscore
+      summary: Skill levels for a player
+      description: |
+        Served from cache when fresh. If the upstream is unreachable but
+        we hold a stale copy, the stale copy is returned — check
+        `fetched_at`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: RS3 display name.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/HiscoreMode'
+      responses:
+        '200':
+          description: The player's skills.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Player'
+        '404':
+          description: Player not found, or the hiscores are unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create a chat account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange credentials for a JWT
+      description: |
+        The token authenticates the WebSocket at `/ws`, where it is
+        passed as the `token` query parameter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Signed token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /chat/history:
+    get:
+      tags: [chat]
+      operationId: getChatHistory
+      summary: Recent chat messages
+      parameters:
+        - name: before
+          in: query
+          description: RFC3339 cursor; returns messages strictly older than this.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 50
+      responses:
+        '200':
+          description: Messages in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /ws:
+    get:
+      tags: [chat]
+      operationId: openWebSocket
+      summary: Realtime price and chat socket
+      description: |
+        Upgrades to a WebSocket. Not usable through a generated HTTP
+        client — connect with the browser's `WebSocket` API. It is
+        documented here so the message payloads are generated as types.
+
+        Send `WsCommand` frames; receive `WsEnvelope` frames whose
+        `payload` shape is determined by `type`:
+
+        | `type`      | `payload`        |
+        |-------------|------------------|
+        | `price`     | `PriceSnapshot`  |
+        | `chat`      | `ChatMessage`    |
+        | `heartbeat` | `WsHeartbeat`    |
+        | `error`     | `WsError`        |
+
+        Price frames arrive only for items subscribed to on this
+        connection; chat and heartbeat frames go to every client.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: JWT from `/auth/login`.
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching protocols.
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    ItemIdPath:
+      name: itemID
+      in: path
+      required: true
+      description: Grand Exchange item ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 1513
+
+    ItemIdsQuery:
+      name: ids
+      in: query
+      required: true
+      description: Comma-separated Grand Exchange item IDs (max 500).
+      schema:
+        type: string
+      example: "1513,1515,2363"
+
+    Window:
+      name: window
+      in: query
+      description: |
+        Lookback as a Go duration (`24h`, `168h`) or a plain number of
+        hours (`24`).
+      schema:
+        type: string
+      example: "24h"
+
+    HiscoreMode:
+      name: mode
+      in: query
+      description: Hiscore table to read.
+      schema:
+        $ref: '#/components/schemas/HiscoreMode'
+
+    CalcBoosts:
+      name: boosts
+      in: query
+      description: |
+        Comma-separated forging boosts to assume when simulating a
+        Smithing anvil recipe (`aph_source: ticks_forge`). Ignored by
+        every other recipe. Unknown tokens are rejected with a 400
+        rather than silently ignored. Recognised tokens: `smithing_cape`,
+        `careless5`, `luminite`, `rapid4`, `tinker2`, `juju`, `varrock4`,
+        `crystal_hammer`, `equipment20` (raises `rapid4` and `tinker2` to
+        their equipment-level-20 values). Omit for the conservative
+        floor — no perk or potion assumed.
+      schema:
+        type: string
+      example: "smithing_cape,rapid4,equipment20"
+
+    Limit:
+      name: limit
+      in: query
+      description: Page size. Capped at 500.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 50
+
+    Offset:
+      name: offset
+      in: query
+      description: Rows to skip.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  responses:
+    BadRequest:
+      description: The request was malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable failure reason.
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+
+    UpstreamHealth:
+      type: object
+      required: [target, ok, ms]
+      properties:
+        target:
+          type: string
+        ok:
+          type: boolean
+        status:
+          type: integer
+        error:
+          type: string
+        ms:
+          type: integer
+          format: int64
+          description: Round-trip time of the probe.
+
+    GatewayHealth:
+      type: object
+      required: [gateway, all_upstreams_ok, upstreams]
+      properties:
+        gateway:
+          type: string
+        all_upstreams_ok:
+          type: boolean
+        upstreams:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamHealth'
+
+    HiscoreMode:
+      type: string
+      enum: [normal, ironman, hardcore]
+      default: normal
+
+    ItemSource:
+      type: string
+      description: Which side of a recipe an item appears on.
+      enum: [all, output, input]
+      default: all
+
+    AphSource:
+      type: string
+      description: |
+        Where a recipe's actions-per-hour came from. `default` means it
+        is a house assumption, not a measured rate — the wiki rarely
+        publishes one. Treat `default` figures as good for ranking
+        recipes against each other, not as literal throughput. `ticks`,
+        `ticks_level` and `ticks_forge` are derived from the wiki's tick
+        cost and Smithing mechanics rather than assumed; `ticks_level`
+        and `ticks_forge` additionally require a `player`, since they
+        depend on skill levels.
+      enum: [wiki, default, override, ticks, ticks_level, ticks_forge]
+
+    PlayerSkill:
+      type: object
+      required: [id, player_id, skill, level, xp, rank]
+      properties:
+        id:
+          type: integer
+          format: int64
+        player_id:
+          type: integer
+          format: int64
+        skill:
+          type: string
+          example: Crafting
+        level:
+          type: integer
+        xp:
+          type: integer
+          format: int64
+        rank:
+          type: integer
+          format: int64
+
+    Player:
+      type: object
+      required: [id, name, mode, fetched_at, skills]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        mode:
+          $ref: '#/components/schemas/HiscoreMode'
+        fetched_at:
+          type: string
+          format: date-time
+          description: |
+            When the hiscores were last read. May be old if the upstream
+            was unreachable and a cached copy was served.
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerSkill'
+
+    RecipeInput:
+      type: object
+      required: [id, recipe_id, item_id, item_name, quantity, is_intermediate]
+      properties:
+        id:
+          type: integer
+          format: int64
+        recipe_id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+          description: |
+            Grand Exchange item ID, or `0` when it could not be
+            resolved. A zero here means the input cannot be priced, and
+            any path depending on it is reported as incomplete.
+        item_name:
+          type: string
+        quantity:
+          type: integer
+          description: Units consumed per craft.
+        is_intermediate:
+          type: boolean
+          description: True when this input is itself craftable.
+
+    Recipe:
+      type: object
+      required:
+        - id
+        - name
+        - output_item_id
+        - output_item_name
+        - output_qty
+        - skill
+        - level_req
+        - xp_per_action
+        - actions_per_hour
+        - aph_source
+        - ticks
+        - members
+        - source
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        output_item_id:
+          type: integer
+          format: int64
+        output_item_name:
+          type: string
+        output_qty:
+          type: integer
+          description: Units produced per craft.
+        skill:
+          type: string
+        level_req:
+          type: integer
+          minimum: 1
+          maximum: 120
+        xp_per_action:
+          type: number
+          format: double
+        actions_per_hour:
+          type: integer
+        inputs:
+          type: array
+          description: |
+            Every ingredient this step consumes, named and priced.
+            Without it a caller sees that a Bronze bar cost something to
+            make but not that it was made of copper and tin, and a
+            cooked dish looks like a thing bought ready-made rather than
+            raw meat plus a fire.
+          items:
+            $ref: '#/components/schemas/CalcStepInput'
+        aph_source:
+          $ref: '#/components/schemas/AphSource'
+        ticks:
+          type: integer
+          description: >-
+            Per-action tick cost from the wiki infobox. Zero when the wiki
+            published none, or published `varies`.
+        facility:
+          type: string
+          description: >-
+            Where the recipe is made, such as `Furnace` or `Anvil` — what
+            separates smelting from forging within Smithing.
+        members:
+          type: boolean
+        source:
+          type: string
+          example: runescape.wiki
+        inputs:
+          type: array
+          description: Omitted in summary listings such as `/search/recipes`.
+          items:
+            $ref: '#/components/schemas/RecipeInput'
+
+    RecipeTreeNode:
+      type: object
+      required: [recipe, depth]
+      properties:
+        recipe:
+          $ref: '#/components/schemas/Recipe'
+        children:
+          type: [array, 'null']
+          description: Inputs that are themselves craftable.
+          items:
+            $ref: '#/components/schemas/RecipeTreeNode'
+        depth:
+          type: integer
+
+    RecipeTree:
+      type: object
+      required: [root]
+      properties:
+        root:
+          $ref: '#/components/schemas/RecipeTreeNode'
+
+    RecipeListResponse:
+      type: object
+      required: [count, recipes]
+      properties:
+        count:
+          type: integer
+        recipes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recipe'
+
+    RecipeIdsResponse:
+      type: object
+      required: [skill, min_level, max_level, count, item_ids]
+      properties:
+        skill:
+          type: string
+        min_level:
+          type: integer
+        max_level:
+          type: integer
+        count:
+          type: integer
+        item_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+
+    RecipeSearchResponse:
+      type: object
+      required: [query, count, total, limit, offset, recipes]
+      properties:
+        query:
+          type: string
+        count:
+          type: integer
+          description: Rows on this page.
+        total:
+          type: integer
+          format: int64
+          description: Rows matching across all pages.
+        limit:
+          type: integer
+        offset:
+          type: integer
+        recipes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recipe'
+
+    ItemSummary:
+      type: object
+      required: [item_id, name, sources]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sources:
+          type: array
+          description: Which sides of a recipe this item was found on.
+          items:
+            type: string
+            enum: [input, output]
+
+    ItemSearchResponse:
+      type: object
+      required: [query, source, count, total, limit, offset, items]
+      properties:
+        query:
+          type: string
+        source:
+          $ref: '#/components/schemas/ItemSource'
+        count:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+        offset:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemSummary'
+
+    BuyLimitsResponse:
+      type: object
+      required: [count, limits]
+      properties:
+        count:
+          type: integer
+        limits:
+          type: object
+          description: |
+            Item ID (as a string key) to its 4-hour buy limit. Items
+            with no known limit are absent.
+          additionalProperties:
+            type: integer
+          examples:
+            - "1513": 25000
+              "2363": 10000
+
+    PriceSnapshot:
+      type: object
+      required: [id, item_id, ts, price, volume]
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_id:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+          description: When this observation was recorded.
+        price:
+          type: integer
+          format: int64
+          description: |
+            The Grand Exchange **guide price** in GP. This is the only
+            price RS3 publishes — it is not an instant-buy or
+            instant-sell quote, and there is no bid/ask spread in this
+            data. Apply an explicit spread assumption before treating it
+            as a price you could transact at.
+        volume:
+          type: integer
+          format: int64
+          description: |
+            Units traded as reported by the exchange. Zero is common and
+            may mean "not reported" rather than "nothing traded" — see
+            `LiquidityStats` for a more robust signal.
+
+    LatestPricesResponse:
+      type: object
+      required: [count, prices]
+      properties:
+        count:
+          type: integer
+        prices:
+          type: array
+          description: Items never polled are absent rather than zeroed.
+          items:
+            $ref: '#/components/schemas/PriceSnapshot'
+
+    PriceHistoryResponse:
+      type: object
+      required: [item_id, from, to, count, history]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        history:
+          type: array
+          description: Ascending by timestamp.
+          items:
+            $ref: '#/components/schemas/PriceSnapshot'
+
+    PriceChange:
+      type: object
+      required: [item_id, window_hours, change_pct, change_gp, has_baseline]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        window_hours:
+          type: number
+          format: double
+        change_pct:
+          type: number
+          format: double
+        change_gp:
+          type: integer
+          format: int64
+        current:
+          description: Null when the item has never been polled.
+          oneOf:
+            - $ref: '#/components/schemas/PriceSnapshot'
+            - type: 'null'
+        previous:
+          description: Null when history does not reach back that far.
+          oneOf:
+            - $ref: '#/components/schemas/PriceSnapshot'
+            - type: 'null'
+        has_baseline:
+          type: boolean
+          description: |
+            False means there was no snapshot old enough to compare
+            against, so `change_pct` is zero for lack of data — not
+            because the price held steady.
+
+    LiquidityTier:
+      type: string
+      description: Coarse bucket of `score`, for filtering.
+      enum: [high, medium, low, unknown]
+
+    LiquidityStats:
+      type: object
+      required:
+        - item_id
+        - observations
+        - distinct_prices
+        - price_min
+        - price_max
+        - price_avg
+        - price_last
+        - volatility_pct
+        - volume_avg
+        - volume_last
+        - stale_for_hours
+        - score
+        - tier
+        - buy_limit_4h
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        observations:
+          type: integer
+          description: |
+            Snapshots in the window. A score built on one or two samples
+            is not worth much — show this next to the score.
+        distinct_prices:
+          type: integer
+        price_min:
+          type: integer
+          format: int64
+        price_max:
+          type: integer
+          format: int64
+        price_avg:
+          type: number
+          format: double
+        price_last:
+          type: integer
+          format: int64
+        volatility_pct:
+          type: number
+          format: double
+          description: Peak-to-trough swing as a percentage of the mean.
+        volume_avg:
+          type: number
+          format: double
+        volume_last:
+          type: integer
+          format: int64
+        last_change_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the price last actually moved — not when it was last
+            polled. Null if it never moved within the window.
+        stale_for_hours:
+          type: number
+          format: double
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Blend of traded volume (60%), how recently the price moved
+            (25%) and how often it moves (15%). A ranking aid, not a
+            probability.
+        tier:
+          $ref: '#/components/schemas/LiquidityTier'
+        buy_limit_4h:
+          type: integer
+          description: 4-hour Grand Exchange buy limit; `0` when unknown.
+
+    CalcAssumptions:
+      type: object
+      required:
+        - price_basis
+        - spread_pct
+        - tax_pct
+        - tax_cap_per_item
+        - tax_exempt_below
+        - inventory_slots
+        - bank_trip_ticks
+      properties:
+        price_basis:
+          type: string
+          enum: [ge_guide_price]
+          description: What the underlying price numbers actually are.
+        spread_pct:
+          type: number
+          format: double
+          description: |
+            Assumed round-trip buy/sell gap. Buys modelled at
+            `price * (1 + spread/200)`, sells at `price * (1 - spread/200)`.
+        tax_pct:
+          type: number
+          format: double
+        tax_cap_per_item:
+          type: integer
+          format: int64
+        tax_exempt_below:
+          type: integer
+          format: int64
+        player:
+          type: string
+        mode:
+          $ref: '#/components/schemas/HiscoreMode'
+        inventory_slots:
+          type: integer
+          description: |
+            Inventory slots assumed available before a bank trip is
+            needed, feeding every actions-per-hour figure derived from
+            ticks (`aph_source` of `ticks`, `ticks_level` or
+            `ticks_forge`).
+        bank_trip_ticks:
+          type: integer
+          description: Ticks charged for a bank trip when the inventory runs out.
+        boosts:
+          type: string
+          description: |
+            The `boosts` query parameter, echoed back verbatim. Absent
+            when no boosts were declared.
+
+    CalcThroughput:
+      type: object
+      description: |
+        The ceiling the Grand Exchange buy limits put on a strategy,
+        regardless of how fast you can click. Usually far below
+        `gp_per_hour`.
+      required:
+        - binding_item_id
+        - binding_item_name
+        - binding_limit_4h
+        - max_crafts_per_4h
+        - crafts_per_hour
+        - gp_per_hour
+      properties:
+        binding_item_id:
+          type: integer
+          format: int64
+        binding_item_name:
+          type: string
+          description: The bought input whose buy limit binds hardest.
+        binding_limit_4h:
+          type: integer
+        max_crafts_per_4h:
+          type: integer
+        crafts_per_hour:
+          type: number
+          format: double
+          description: |
+            The lower of the buy-limit rate and the rate the whole path
+            completes at (`1 / total_hours`). Not the root step's
+            `actions_per_hour`: on a chained path the root step runs
+            several times for each finished item.
+        gp_per_hour:
+          type: number
+          format: double
+          description: Profit per craft at the limit-constrained rate.
+
+    SkillRequirement:
+      type: object
+      required: [skill, required, actual, met]
+      properties:
+        skill:
+          type: string
+        required:
+          type: integer
+        actual:
+          type: integer
+          description: The player's level; `0` if they lack the skill.
+        met:
+          type: boolean
+
+    CalcStepInput:
+      type: object
+      required: [name, quantity, crafted, priced, cost]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+          description: Absent when the scrape could not resolve the item.
+        name:
+          type: string
+        quantity:
+          type: integer
+          description: |
+            Scaled by the step's `runs`, so it matches the arithmetic
+            behind `cost`: making two bars takes twice the copper.
+        crafted:
+          type: boolean
+          description: |
+            True when this input is produced by another step of the same
+            path rather than bought. Its cost is carried by that step,
+            so `cost` here is 0 and must not be added again.
+        priced:
+          type: boolean
+          description: |
+            False when the item has no Grand Exchange price. The input
+            is still listed — "we could not price this" is an answer,
+            and the path is reported as `complete: false`.
+        unit_price:
+          type: number
+          format: double
+          description: Buy-side price per unit; absent when unpriced.
+        cost:
+          type: number
+          format: double
+
+    CalcStep:
+      type: object
+      required:
+        - recipe
+        - skill
+        - level_req
+        - xp
+        - aph
+        - aph_source
+        - runs
+        - inputs
+        - buy_cost
+        - sell_revenue
+        - profit
+      properties:
+        recipe:
+          type: string
+        skill:
+          type: string
+        level_req:
+          type: integer
+        xp:
+          type: number
+          format: double
+        aph:
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
+        aph_source:
+          $ref: '#/components/schemas/AphSource'
+        runs:
+          type: integer
+          description: Times this step runs per unit of the final output.
+        buy_cost:
+          type: number
+          format: double
+        sell_revenue:
+          type: number
+          format: double
+        profit:
+          type: number
+          format: double
+
+    CalcPath:
+      type: object
+      description: One strategy for producing the item.
+      required:
+        - path
+        - steps
+        - profit_per_craft
+        - gp_per_hour
+        - xp_per_hour
+        - gp_per_xp
+        - roi_pct
+        - total_hours
+        - total_xp
+        - buy_cost
+        - sell_revenue
+        - tax_paid
+        - actions_per_hour
+        - aph_source
+        - complete
+      properties:
+        path:
+          type: array
+          description: Recipe names in execution order.
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalcStep'
+        profit_per_craft:
+          type: number
+          format: double
+          description: Net GP per craft of the final output, after tax.
+        gp_per_hour:
+          type: number
+          format: double
+          description: |
+            Unconstrained rate. Prefer `throughput.gp_per_hour` when
+            present — this figure ignores buy limits.
+        xp_per_hour:
+          type: number
+          format: double
+        gp_per_xp:
+          type: number
+          format: double
+        roi_pct:
+          type: number
+          format: double
+        total_hours:
+          type: number
+          format: double
+        total_xp:
+          type: number
+          format: double
+        buy_cost:
+          type: number
+          format: double
+        sell_revenue:
+          type: number
+          format: double
+        tax_paid:
+          type: number
+          format: double
+        actions_per_hour:
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
+        aph_source:
+          $ref: '#/components/schemas/AphSource'
+        complete:
+          type: boolean
+          description: |
+            False means an input had no price and was costed at zero, so
+            every money figure here is an upper bound. Only ever false
+            when `include_incomplete=true` was passed.
+        unpriced_inputs:
+          type: array
+          description: Names of inputs that could not be priced.
+          items:
+            type: string
+        throughput:
+          description: Null when no bought input has a known buy limit.
+          oneOf:
+            - $ref: '#/components/schemas/CalcThroughput'
+            - type: 'null'
+        meets_requirements:
+          type: [boolean, 'null']
+          description: Null unless a `player` was supplied.
+        skill_requirements:
+          type: array
+          description: Present only when a `player` was supplied.
+          items:
+            $ref: '#/components/schemas/SkillRequirement'
+
+    CalcResult:
+      type: object
+      required: [item_id, generated_at, assumptions, paths, cached]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        generated_at:
+          type: string
+          format: date-time
+        assumptions:
+          $ref: '#/components/schemas/CalcAssumptions'
+        paths:
+          type: array
+          description: Best first.
+          items:
+            $ref: '#/components/schemas/CalcPath'
+        cached:
+          type: boolean
+
+    CalcBatchEntry:
+      type: object
+      required: [item_id]
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/CalcResult'
+            - type: 'null'
+        error:
+          type: string
+          description: Set instead of `result` when this item failed.
+
+    CalcBatchResponse:
+      type: object
+      required: [count, results]
+      properties:
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalcBatchEntry'
+
+    TopMetric:
+      type: string
+      description: What /calc/top ranks by. No default — it is required.
+      enum: [xp_per_hour, gp_per_hour, gp_per_xp]
+
+    TopRow:
+      type: object
+      description: The best production path for one item, under one metric.
+      required:
+        - item_id
+        - name
+        - skill
+        - level_req
+        - xp_per_hour
+        - gp_per_hour
+        - gp_per_hour_limited
+        - gp_per_xp
+        - actions_per_hour
+        - aph_source
+        - complete
+      properties:
+        item_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        skill:
+          type: string
+        level_req:
+          type: integer
+        xp_per_hour:
+          type: number
+          format: double
+        gp_per_hour:
+          type: number
+          format: double
+          description: |
+            Unconstrained rate. `gp_per_hour` ranks on
+            `gp_per_hour_limited` instead — prefer that field.
+        gp_per_hour_limited:
+          type: number
+          format: double
+          description: |
+            `gp_per_hour` capped by the binding input's Grand Exchange
+            buy limit where one is known, equal to `gp_per_hour`
+            otherwise. Never above `gp_per_hour`: the cap is on how
+            often the whole path can be completed. This is the field
+            `metric=gp_per_hour` sorts on.
+        gp_per_xp:
+          type: number
+          format: double
+        actions_per_hour:
+          type: number
+          format: double
+          description: |
+            Fractional: an item costing 80 bars takes about 1.7
+            hours, so its honest rate is well below one an hour.
+        aph_source:
+          $ref: '#/components/schemas/AphSource'
+        complete:
+          type: boolean
+          description: |
+            False means an input had no price and was costed at zero.
+            Only ever false when `include_incomplete=true` was passed.
+        binding_item_name:
+          type: string
+          description: |
+            The bought input whose buy limit produced
+            `gp_per_hour_limited`. Absent when no bought input has a
+            known buy limit.
+        meets_requirements:
+          type: boolean
+          description: |
+            Whether the player has every level this path needs. Always
+            `true` on a ranking, which drops what the player cannot
+            perform; absent when no `player` was supplied, since with no
+            hiscore data "you qualify" would be a guess presented as
+            fact.
+
+    TopResponse:
+      type: object
+      required: [metric, count, rows, assumptions]
+      properties:
+        metric:
+          $ref: '#/components/schemas/TopMetric'
+        count:
+          type: integer
+          description: Number of rows returned (at most `limit`).
+        rows:
+          type: array
+          description: |
+            Ordered by `metric`, best first, with two qualifications
+            ahead of it: an incomplete row (an input had no price, so
+            its money figures are upper bounds) sorts below a complete
+            one, and `item_id` ascending breaks an exact tie so two
+            identical requests return the same rows at the `limit`
+            boundary. With a `player`, only recipes that player can
+            actually perform appear here at all.
+          items:
+            $ref: '#/components/schemas/TopRow'
+        assumptions:
+          $ref: '#/components/schemas/CalcAssumptions'
+
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+        password:
+          type: string
+          format: password
+          minLength: 6
+
+    RegisteredUser:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+
+    LoginResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: JWT; pass as `?token=` when opening `/ws`.
+
+    ChatMessage:
+      type: object
+      required: [id, user_id, username, body, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        body:
+          type: string
+          maxLength: 500
+        created_at:
+          type: string
+          format: date-time
+
+    ChatHistoryResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+
+    WsCommandAction:
+      type: string
+      enum: [subscribe, unsubscribe, chat]
+
+    WsCommand:
+      type: object
+      description: A frame sent from the client to the server.
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/WsCommandAction'
+        item_ids:
+          type: array
+          description: Required for `subscribe` and `unsubscribe`.
+          items:
+            type: integer
+            format: int64
+        body:
+          type: string
+          maxLength: 500
+          description: Required for `chat`.
+
+    WsEnvelopeType:
+      type: string
+      enum: [price, chat, heartbeat, error]
+
+    WsEnvelope:
+      type: object
+      description: |
+        A frame sent from the server to the client. `type` determines
+        how to parse `payload`.
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/WsEnvelopeType'
+        payload:
+          description: |
+            `PriceSnapshot` for `price`, `ChatMessage` for `chat`,
+            `WsHeartbeat` for `heartbeat`, `WsError` for `error`.
+          oneOf:
+            - $ref: '#/components/schemas/PriceSnapshot'
+            - $ref: '#/components/schemas/ChatMessage'
+            - $ref: '#/components/schemas/WsHeartbeat'
+            - $ref: '#/components/schemas/WsError'
+
+    WsHeartbeat:
+      type: object
+      required: [ts]
+      properties:
+        ts:
+          type: string
+          format: date-time
+
+    WsError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string

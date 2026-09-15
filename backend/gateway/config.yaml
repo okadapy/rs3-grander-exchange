@@ -1,0 +1,53 @@
+service_name: gateway
+port: 8080
+log_level: debug
+env: local
+
+redis:
+  addr: redis:6379
+  password: ""
+  db: 0
+  pool_size: 10
+
+# Routing table — first match wins.
+routes:
+  - prefix: /hiscore
+    target: http://hiscore-service:8081
+    timeout: 20s
+  - prefix: /recipes
+    target: http://recipe-service:8082
+    timeout: 30s
+  - prefix: /search
+    target: http://recipe-service:8082
+    timeout: 30s
+  - prefix: /items
+    target: http://recipe-service:8082
+    timeout: 30s
+  - prefix: /prices
+    target: http://ge-price-service:8083
+    timeout: 20s
+  - prefix: /calc
+    target: http://calc-service:8084
+    timeout: 60s
+  - prefix: /auth
+    target: http://realtime-service:8085
+    timeout: 10s
+  - prefix: /chat
+    target: http://realtime-service:8085
+    timeout: 10s
+  - prefix: /ws
+    target: http://realtime-service:8085
+    timeout: 0s
+    websocket: true
+
+cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  allowed_headers: ["Content-Type", "Authorization", "X-Request-ID", "X-Player", "X-Mode"]
+  expose_headers:  ["X-Request-ID"]
+  max_age: 10m
+  allow_credentials: false
+
+ratelimit:
+  requests_per_second: 50
+  burst: 100
