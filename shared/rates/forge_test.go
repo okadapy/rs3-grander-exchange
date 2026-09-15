@@ -1,6 +1,9 @@
 package rates
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // Progress required is the bar count times a per-metal constant. Checked
 // against three wiki pages: rune platebody 5 bars x 600 = 3000, rune
@@ -97,6 +100,40 @@ func TestParseBoostsEquipmentLevelRaisesRapidAndTinker(t *testing.T) {
 func TestParseBoostsRejectsUnknownToken(t *testing.T) {
 	if _, err := ParseBoosts("rapid4,rapid9"); err == nil {
 		t.Error("ParseBoosts accepted an unknown token")
+	}
+}
+
+// ParseBoosts never emits a negative BaseProgressBonus or DoubleProgressPct,
+// but Boosts is an exported struct, so a caller outside this package (a
+// hand-built test fixture, a future call site that skips ParseBoosts) can
+// construct one directly with negative fields. Without the per-strike gain
+// floor in ForgeTicks, such a Boosts would drive progress-per-strike to zero
+// or negative and the simulation loop would never terminate. Run the call on
+// a goroutine with a timeout so a regression here fails the test instead of
+// hanging the suite.
+func TestForgeTicksTerminatesWithPathologicalBoosts(t *testing.T) {
+	pathological := Boosts{BaseProgressBonus: -100, DoubleProgressPct: -100}
+
+	type result struct {
+		ticks int
+		ok    bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		ticks, ok := ForgeTicks(5, "Rune", 99, 99, pathological)
+		done <- result{ticks, ok}
+	}()
+
+	select {
+	case r := <-done:
+		if !r.ok {
+			t.Fatal("ForgeTicks(pathological Boosts) not ok")
+		}
+		if r.ticks <= 0 {
+			t.Errorf("ForgeTicks(pathological Boosts) = %d ticks, want a positive count", r.ticks)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ForgeTicks(pathological Boosts) did not return within 5s, likely an infinite loop")
 	}
 }
 

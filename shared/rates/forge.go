@@ -158,13 +158,6 @@ func ForgeTicks(bars int, metal string, smithing, firemaking int, b Boosts) (int
 	if smithing >= 99 {
 		base++
 	}
-	// ParseBoosts never produces a negative BaseProgressBonus, but
-	// Boosts is exported and a caller can construct one directly. A
-	// non-positive gain per strike would make the loop below never
-	// terminate, so the floor is enforced here rather than assumed.
-	if base < 1 {
-		base = 1
-	}
 	multiplier := 1 + b.DoubleProgressPct/100
 
 	reheat := reheatTicksSlow
@@ -185,8 +178,14 @@ func ForgeTicks(bars int, metal string, smithing, firemaking int, b Boosts) (int
 		}
 		ticks += strikeTicks
 		gain := int(float64(base) * heatMultiplier(heat, maxHeat) * multiplier)
+		// ParseBoosts never produces a Boosts that drives gain non-positive,
+		// but Boosts is exported and a caller can construct one directly
+		// (e.g. with a negative BaseProgressBonus or DoubleProgressPct).
+		// This floor guarantees progress strictly increases every
+		// iteration, so the loop terminates in at most `required`
+		// iterations for any Boosts, however it was built.
 		if gain < 1 {
-			gain = 1 // same termination guarantee as the base floor above
+			gain = 1
 		}
 		progress += gain
 		heat -= heatPerStrike
