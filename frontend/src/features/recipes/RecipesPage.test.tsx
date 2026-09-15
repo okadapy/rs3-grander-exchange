@@ -73,7 +73,11 @@ it('shows the profitability columns for the chosen skill', async () => {
   backend();
   await chooseCrafting();
 
-  const row = await screen.findByRole('row', { name: /Ruby/ });
+  // The row appears as soon as /recipes answers, but every money column below
+  // comes from /calc/batch, which resolves independently. Waiting only for the
+  // row name races the calculation: anchor on a calc-derived value instead.
+  await screen.findByText('12.5%');
+  const row = screen.getByRole('row', { name: /Ruby/ });
   expect(within(row).getByText('2.7K')).toBeInTheDocument();
   expect(within(row).getByText('2.4K')).toBeInTheDocument();
   expect(within(row).getByText('301')).toBeInTheDocument();
@@ -98,7 +102,8 @@ it('marks a path whose actions-per-hour is a house assumption', async () => {
   });
   await chooseCrafting();
 
-  const row = await screen.findByRole('row', { name: /Ruby/ });
+  await screen.findByTitle(/action rate assumed by the server/i);
+  const row = screen.getByRole('row', { name: /Ruby/ });
   expect(within(row).getByTitle(/action rate assumed by the server/i)).toBeInTheDocument();
 });
 
@@ -108,7 +113,8 @@ it('states the reason instead of a zero margin when the server could not price t
   });
   await chooseCrafting();
 
-  const row = await screen.findByRole('row', { name: /Ruby/ });
+  await screen.findByText(/no priceable production path/);
+  const row = screen.getByRole('row', { name: /Ruby/ });
   expect(within(row).getByText(/no priceable production path/)).toBeInTheDocument();
   expect(within(row).queryByText('0')).not.toBeInTheDocument();
   // Price, components, margin, ROI, xp/h, gp/xp, gp/h and gp/h capped all
@@ -122,7 +128,8 @@ it('dims every money column alike when the path is incomplete', async () => {
   });
   await chooseCrafting();
 
-  const row = await screen.findByRole('row', { name: /Ruby/ });
+  await screen.findByText('12.5%');
+  const row = screen.getByRole('row', { name: /Ruby/ });
   for (const value of ['301', '12.5%', '301K', '752.5K']) {
     expect(within(row).getByText(value)).toHaveStyle({ opacity: '0.55' });
   }
