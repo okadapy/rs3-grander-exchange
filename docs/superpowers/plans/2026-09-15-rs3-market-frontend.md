@@ -4780,3 +4780,90 @@ git commit -m "Собрать единый экран с английским и
 ```
 
 ---
+
+---
+
+## Task 8 amendment: chat is a popup, not a page
+
+This overrides Task 8 wherever the two disagree. Everything Task 8 says about
+`useChatHistory`, `WsProvider`, the auth panel, the message list and the
+composer still holds; what changes is the container and the copy.
+
+- `features/chat/ChatPage.tsx` does not exist. The component is
+  `features/chat/ChatPopup.tsx`, and Task 13 already created it as an inert
+  collapsed bar. You are giving that bar its behaviour.
+- All user-facing copy is ENGLISH. The Russian strings in Task 8's code
+  samples are stale — translate them. `Сообщение` becomes `Message`,
+  `Отправить` becomes `Send`, `Войти` becomes `Sign in`,
+  `Зарегистрироваться` becomes `Register`, `Выйти` becomes `Sign out`,
+  `Логин` becomes `Username`, `Пароль` becomes `Password`,
+  `Сообщений пока нет.` becomes `No messages yet.`,
+  `Вы вошли как {username}` becomes `Signed in as {username}`,
+  `Сессия недействительна, войдите заново.` becomes
+  `Session is no longer valid. Sign in again.`,
+  `Соединение потеряно, живые сообщения не приходят.` becomes
+  `Connection lost. Live messages are not arriving.`,
+  `Чат и живые цены работают по токену, поэтому требуется вход.` becomes
+  `Chat and live prices require a token, so you need to sign in.`
+- The popup is anchored bottom-right, `position: fixed`, above the rest of
+  the content. Collapsed it is a narrow bar showing `Chat` and, when messages
+  arrived while collapsed, an unread count. Expanded it is a panel roughly
+  360px wide and 480px tall holding the auth panel, the message list and the
+  composer.
+- It must not steal width from the recipe table. It overlays; it never
+  participates in the flex row that `App.tsx` builds.
+- There are no routes. `App.tsx` already mounts `<ChatPopup />` as the last
+  child of the shell.
+
+Additional tests for the popup shell, on top of Task 8's own:
+
+```tsx
+it('starts collapsed and expands when clicked', async () => {
+  server.use(historyHandler());
+  renderWithProviders(<ChatPopup />, { socketFactory: (url) => new FakeSocket(url) });
+
+  expect(screen.queryByText('Hey!')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Chat' }));
+
+  expect(await screen.findByText('Hey!')).toBeInTheDocument();
+});
+
+it('counts messages that arrive while collapsed', async () => {
+  signedIn();
+  server.use(historyHandler());
+  renderWithProviders(<ChatPopup />, { socketFactory: (url) => new FakeSocket(url) });
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+    FakeSocket.last?.onmessage?.({
+      data: JSON.stringify({
+        type: 'chat',
+        payload: { id: 2, user_id: 2, username: 'fe_probe', body: 'While away', created_at: '2026-09-15T10:29:51.487Z' },
+      }),
+    });
+  });
+
+  expect(await screen.findByLabelText('Chat, 1 unread message')).toBeInTheDocument();
+});
+
+it('clears the unread count once expanded', async () => {
+  signedIn();
+  server.use(historyHandler());
+  renderWithProviders(<ChatPopup />, { socketFactory: (url) => new FakeSocket(url) });
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+    FakeSocket.last?.onmessage?.({
+      data: JSON.stringify({
+        type: 'chat',
+        payload: { id: 2, user_id: 2, username: 'fe_probe', body: 'While away', created_at: '2026-09-15T10:29:51.487Z' },
+      }),
+    });
+  });
+  await userEvent.click(await screen.findByLabelText('Chat, 1 unread message'));
+
+  expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument();
+});
+```
+
+---
