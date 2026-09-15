@@ -43,6 +43,11 @@ var (
 
 	reAPH = regexp.MustCompile(`\|\s*aph\s*=\s*(\d+)`)
 
+	// Ticks needs multiline mode: `$` must match the end of the
+	// `|ticks = 3` line, not just the end of the whole wikitext blob.
+	reTicks    = regexp.MustCompile(`(?m)\|\s*ticks\s*=\s*(\d+)\s*$`)
+	reFacility = regexp.MustCompile(`\|\s*facility\s*=\s*([^|\n]+)`)
+
 	// Skill: matches skill, skill1, skill2 ...
 	reSkill = regexp.MustCompile(`\|\s*skill\d*\s*=\s*([^\n|}]+)`)
 
@@ -108,6 +113,18 @@ func parseWikitext(title, hintSkill, wt string) *models.Recipe {
 			rec.ActionsPerHour = aph
 			rec.APHSource = models.APHSourceWiki
 		}
+	}
+
+	// Only a bare number counts. "varies" means the cost depends on
+	// heat, level or a minigame, and reading it as anything else would
+	// invent a rate.
+	if m := reTicks.FindStringSubmatch(wt); len(m) == 2 {
+		if ticks, err := strconv.Atoi(m[1]); err == nil && ticks > 0 {
+			rec.Ticks = ticks
+		}
+	}
+	if m := reFacility.FindStringSubmatch(wt); len(m) == 2 {
+		rec.Facility = strings.TrimSpace(m[1])
 	}
 
 	// Output name/qty overrides from numbered fields.

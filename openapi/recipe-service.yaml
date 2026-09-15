@@ -440,6 +440,7 @@ components:
       - xp_per_action
       - actions_per_hour
       - aph_source
+      - ticks
       - members
       - source
       properties:
@@ -469,6 +470,14 @@ components:
           type: integer
         aph_source:
           $ref: '#/components/schemas/AphSource'
+        ticks:
+          type: integer
+          description: Per-action tick cost from the wiki infobox. Zero when the wiki published none,
+            or published `varies`.
+        facility:
+          type: string
+          description: Where the recipe is made, such as `Furnace` or `Anvil` — what separates smelting
+            from forging within Smithing.
         members:
           type: boolean
         source:

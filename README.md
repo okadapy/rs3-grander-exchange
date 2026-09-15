@@ -182,6 +182,9 @@ Every script is idempotent, so re-running the set is safe.
   input name against it, unindexed on both sides, which took ~13s with
   nothing to write and ~44s on a run that resolved rows. It used to run
   once a day where nobody noticed; it now runs after every scrape.
+- **004** adds `recipes.ticks` and `recipes.facility`. The tick cost
+  drives the craft-rate model; the facility separates smelting at a
+  furnace from forging at an anvil, which share a skill but not a rate.
 
 ## Local operations
 
