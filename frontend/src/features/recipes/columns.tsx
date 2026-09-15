@@ -193,7 +193,9 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
     headerName: 'Liquidity',
     width: 180,
     renderCell: (p: GridRenderCellParams<RecipeRow, number>) => {
-      if (p.row.liquidityTier === null) {
+      // A tier without a score used to render "null / 100"; both halves of
+      // the chip have to be there for it to say anything.
+      if (p.row.liquidityTier === null || p.row.liquidityScore === null) {
         return <Typography variant="caption" color="text.secondary">no data</Typography>;
       }
       const color =
@@ -202,7 +204,12 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
           : 'default';
       return (
         <Tooltip title={`Observations: ${formatInt(p.row.observations)}, average volume ${formatCompact(p.row.volumeAvg)}`}>
-          <Chip size="small" color={color} variant="outlined" label={`${p.row.liquidityScore} / 100`} />
+          <Chip
+            size="small"
+            color={color}
+            variant="outlined"
+            label={`${formatInt(p.row.liquidityScore)} / 100`}
+          />
         </Tooltip>
       );
     },

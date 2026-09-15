@@ -14,6 +14,21 @@ interface Props {
   onChange(next: FiltersValue): void;
 }
 
+const MIN_LEVEL = 1;
+// Virtual levels from the hiscores go past a skill's nominal cap, so the
+// bound is the table's own ceiling rather than 99 or 120.
+const MAX_LEVEL = 150;
+
+// A cleared numeric field reads as '', and Number('') is 0: clearing "Max
+// level" used to send level=0 and empty the table with no explanation. An
+// empty field means that bound simply is not narrowing anything.
+function levelFrom(raw: string, fallback: number): number {
+  if (raw.trim() === '') return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_LEVEL, Math.max(MIN_LEVEL, Math.round(parsed)));
+}
+
 export function RecipeFilters({ value, onChange }: Props) {
   return (
     <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
@@ -36,16 +51,22 @@ export function RecipeFilters({ value, onChange }: Props) {
         type="number"
         size="small"
         sx={{ width: 120 }}
+        slotProps={{ htmlInput: { min: MIN_LEVEL, max: MAX_LEVEL } }}
         value={value.minLevel}
-        onChange={(event) => onChange({ ...value, minLevel: Number(event.target.value) })}
+        onChange={(event) =>
+          onChange({ ...value, minLevel: levelFrom(event.target.value, MIN_LEVEL) })
+        }
       />
       <TextField
         label="Max level"
         type="number"
         size="small"
         sx={{ width: 120 }}
+        slotProps={{ htmlInput: { min: MIN_LEVEL, max: MAX_LEVEL } }}
         value={value.maxLevel}
-        onChange={(event) => onChange({ ...value, maxLevel: Number(event.target.value) })}
+        onChange={(event) =>
+          onChange({ ...value, maxLevel: levelFrom(event.target.value, MAX_LEVEL) })
+        }
       />
       <TextField
         label="Spread, %"

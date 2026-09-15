@@ -357,3 +357,31 @@ it('keeps the rows on screen when only the calculation fails', async () => {
   expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   expect(await screen.findByRole('row', { name: /Ruby/ })).toBeInTheDocument();
 });
+
+it('says there is no liquidity data rather than printing a missing score', async () => {
+  server.use(
+    http.get('http://localhost:8080/recipes', () =>
+      HttpResponse.json({ count: 1, recipes: [recipe()] }),
+    ),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: 'Crafting', min_level: 1, max_level: 99, count: 1, item_ids: [1603] }),
+    ),
+    http.get('http://localhost:8080/prices/latest', () =>
+      HttpResponse.json({ count: 1, prices: [snapshot()] }),
+    ),
+    http.get('http://localhost:8080/prices/stats/1603', () => {
+      const stats: Partial<ReturnType<typeof liquidity>> = liquidity();
+      delete stats.score;
+      return HttpResponse.json(stats);
+    }),
+    http.get('http://localhost:8080/calc/batch', () =>
+      HttpResponse.json({ count: 1, results: [batchEntry()] }),
+    ),
+  );
+
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />);
+
+  const row = await screen.findByRole('row', { name: /Ruby/ });
+  expect(within(row).getByText('no data')).toBeInTheDocument();
+  expect(within(row).queryByText(/null/)).not.toBeInTheDocument();
+});
