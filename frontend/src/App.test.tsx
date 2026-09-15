@@ -12,9 +12,17 @@ function healthHandler() {
 }
 
 // App always mounts ChatPopup (Task 8), which fetches chat history on mount
-// regardless of whether the popup is expanded.
+// regardless of whether the popup is expanded. It also always mounts
+// RecipesPage, which now queries /recipes and /recipes/ids unconditionally
+// (Task 11, Delta C: no skill selected still shows every craft).
 beforeEach(() => {
-  server.use(http.get('http://localhost:8080/chat/history', () => HttpResponse.json({ messages: [] })));
+  server.use(
+    http.get('http://localhost:8080/chat/history', () => HttpResponse.json({ messages: [] })),
+    http.get('http://localhost:8080/recipes', () => HttpResponse.json({ count: 0, recipes: [] })),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: '', min_level: 1, max_level: 120, count: 0, item_ids: [] }),
+    ),
+  );
 });
 
 it('renders the character column and the recipe area on one screen', async () => {
