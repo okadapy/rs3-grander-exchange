@@ -3682,6 +3682,20 @@ it('states the reason instead of a zero margin when the server could not price t
   expect(within(row).queryByText('0')).not.toBeInTheDocument();
 });
 
+it('takes the initial skill from the url when the character page linked here', async () => {
+  backend();
+  renderWithProviders(<RecipesPage />, { route: '/recipes?skill=Crafting' });
+
+  expect(await screen.findByRole('row', { name: /Ruby/ })).toBeInTheDocument();
+});
+
+it('ignores a skill parameter that is not a real skill', async () => {
+  backend();
+  renderWithProviders(<RecipesPage />, { route: '/recipes?skill=%3Cscript%3E' });
+
+  expect(screen.getByText('Выберите скилл, чтобы увидеть рецепты.')).toBeInTheDocument();
+});
+
 it('says that sorting only covers the loaded page', async () => {
   backend();
   await chooseCrafting();
@@ -3991,6 +4005,8 @@ export const recipeColumns: GridColDef<RecipeRow>[] = [
 import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { canonicalSkill } from '../../assets/skills';
 import { useCalcBatch } from '../../api/queries/calc';
 import { useLatestPrices, useLiquidityStats } from '../../api/queries/prices';
 import { usePriceableItemIds, useSkillRecipes } from '../../api/queries/recipes';
@@ -4005,8 +4021,12 @@ const PAGE_SIZE = 25;
 
 export function RecipesPage() {
   const player = usePlayerPrefs();
+  const [search] = useSearchParams();
   const [filters, setFilters] = useState<FiltersValue>({
-    skill: '',
+    // Task 6's character page links here as /recipes?skill=Crafting when a
+    // skill row is clicked, so the initial filter comes from the URL when
+    // present. canonicalSkill rejects a tampered or unknown value.
+    skill: canonicalSkill(search.get('skill') ?? '') ?? '',
     minLevel: 1,
     maxLevel: 120,
     includeIncomplete: false,
