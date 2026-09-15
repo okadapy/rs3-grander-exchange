@@ -118,9 +118,10 @@ func betterRow(a, b TopRow, m Metric) bool {
 //
 // Achievability is inert without a player — MeetsRequirements is nil on
 // every row then, so every row counts as achievable — which is why
-// there is no explicit check on opts.Player here. Unachievable rows are
-// ordered last rather than dropped: a caller browsing without a player
-// must still see the whole catalogue.
+// there is no explicit check on opts.Player here. The term is kept even
+// though rankable now drops unachievable rows before they reach the
+// sort: it costs nothing, and it is what keeps this precedence
+// identical to sortPaths, which does still have to order them.
 //
 // ItemID breaks the final tie. Rows are collected out of a map, so
 // without it sort.SliceStable preserves a randomized order and equal
@@ -159,6 +160,23 @@ func meetsRow(r TopRow) bool {
 // are the same request.
 func matchesSkill(r TopRow, skill string) bool {
 	return skill == "" || strings.EqualFold(r.Skill, skill)
+}
+
+// rankable decides whether a path belongs in the ranking at all.
+//
+// A path the player cannot perform is dropped rather than ordered last:
+// a leaderboard is read as a list of things to go and do, and the
+// highest-XP recipes in the game are end-game smithing chains that a
+// mid-level account will never reach. Worse, those are exactly the
+// recipes whose rate falls back to the house default, because the level
+// gate that refuses them also refuses to derive a tick cost — so left in
+// they crowd out the reachable items with a server-invented number.
+//
+// Without a player there is nothing to compare against: MeetsRequirements
+// is nil on every row, meetsRow reports true, and the whole catalogue
+// ranks as before.
+func rankable(r TopRow, skill string) bool {
+	return matchesSkill(r, skill) && meetsRow(r)
 }
 
 // rowFromPath maps one evaluated PathResult onto a ranked TopRow.
@@ -240,7 +258,7 @@ func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error)
 		}
 		for _, p := range res.Paths {
 			row := rowFromPath(id, p)
-			if !matchesSkill(row, opts.Skill) {
+			if !rankable(row, opts.Skill) {
 				continue
 			}
 			if cur, ok := best[id]; !ok || betterRow(row, cur, opts.Metric) {

@@ -293,6 +293,29 @@ func TestMatchesSkillFiltersCaseInsensitively(t *testing.T) {
 	}
 }
 
+// A leaderboard is read as a list of things to go and do, so a recipe
+// the player's levels refuse is not worth a place in it — the more so
+// because those are the recipes whose rate falls back to the house
+// default, the level gate that refuses them being the same one that
+// refuses to derive a tick cost.
+func TestRankableDropsWhatThePlayerCannotDo(t *testing.T) {
+	yes, no := true, false
+
+	if rankable(TopRow{Skill: "Smithing", MeetsRequirements: &no}, "") {
+		t.Error("a recipe above the player's level must not be ranked")
+	}
+	if !rankable(TopRow{Skill: "Smithing", MeetsRequirements: &yes}, "") {
+		t.Error("a recipe the player can perform must be ranked")
+	}
+	if !rankable(TopRow{Skill: "Smithing"}, "") {
+		t.Error("with no player there is nothing to compare against, " +
+			"so the whole catalogue must still rank")
+	}
+	if rankable(TopRow{Skill: "Smithing", MeetsRequirements: &yes}, "Crafting") {
+		t.Error("the skill filter must still apply to an achievable row")
+	}
+}
+
 // A ranking cached under a key that omits an input is served to a
 // request that asked for something else. The per-item key already mixes
 // in the resolved market; keying only on the caller's spread override

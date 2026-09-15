@@ -196,15 +196,28 @@ paths:
         hundred times an hour — above the things people actually craft.
 
 
-        When `player` is supplied, rows the player cannot perform sort
+        When `player` is supplied, recipes that player''s levels cannot
 
-        below the ones they can, with `metric` as the tiebreaker inside
+        perform are dropped from the ranking entirely. A leaderboard is
 
-        each group; they are ranked last rather than dropped, so a
+        read as a list of things to go and do, and the highest-XP
 
-        caller browsing the catalogue still sees everything. Each row
+        recipes in the game are end-game chains a mid-level account will
 
-        carries `meets_requirements`, matching `/calc/{itemID}`.
+        never reach; they are also the ones whose rate falls back to the
+
+        house default, because the level gate that refuses them refuses
+
+        to derive a tick cost as well. Left in, they crowd out the
+
+        reachable items with a server-invented number. Every row
+
+        returned therefore has `meets_requirements: true`.
+
+
+        Without a `player` there is nothing to compare levels against,
+
+        so the whole catalogue ranks and `meets_requirements` is absent.
 
 
         An item whose calculation fails (no priceable path, upstream
@@ -730,9 +743,9 @@ components:
           description: Number of rows returned (at most `limit`).
         rows:
           type: array
-          description: 'Best first: achievable before unachievable when a `player`
+          description: 'Best first by `metric`. With a `player`, only recipes that
 
-            was supplied, then by `metric`.
+            player can actually perform appear here.
 
             '
           items:
@@ -814,10 +827,14 @@ components:
             '
         meets_requirements:
           type: boolean
-          description: 'Whether the player has every level this path needs. Absent
+          description: 'Whether the player has every level this path needs. Always
 
-            when no `player` was supplied — with no hiscore data,
+            `true` on a ranking, which drops what the player cannot
 
-            "you qualify" would be a guess presented as fact.
+            perform; absent when no `player` was supplied, since with no
+
+            hiscore data "you qualify" would be a guess presented as
+
+            fact.
 
             '
