@@ -160,9 +160,9 @@ describe('createWsConnection', () => {
     const h = harness();
     h.socket().open();
 
-    h.connection.sendChat('Привет');
+    h.connection.sendChat('Grüße 日本');
 
-    expect(h.socket().parsed).toEqual([{ action: 'chat', body: 'Привет' }]);
+    expect(h.socket().parsed).toEqual([{ action: 'chat', body: 'Grüße 日本' }]);
   });
 
   it('reports the open status once the socket connects', () => {
