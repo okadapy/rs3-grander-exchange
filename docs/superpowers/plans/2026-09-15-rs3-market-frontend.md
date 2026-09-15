@@ -5081,3 +5081,37 @@ it('shows every craft when no skill is selected', async () => {
 - The recipe table is the centre zone of the screen. It must not set a
   fixed width or overflow its column; `App.tsx` gives it `flex: 1` and
   `minWidth: 0`.
+
+---
+
+## Task 12 amendment: English copy for the live-price notices
+
+`task-12-brief.md` is otherwise current. One thing in it is stale: it
+contains four Russian UI strings, written before the app was translated.
+Every user-facing string in this application is **English**. Use exactly
+these, so wording stays consistent with the rest of the screen:
+
+| Brief (Russian) | Use this |
+|---|---|
+| `Живые цены приходят по токену. Войдите в чате, чтобы получать их сразу; без входа цены обновляются раз в 30 секунд.` | `Live prices require a signed-in token. Sign in from the chat to receive them instantly; otherwise prices refresh every 30 seconds.` |
+| `Пересчитать` (button) | `Recalculate` |
+| `Цены изменились у {n} позиций. Маржа считается на сервере, поэтому её нужно пересчитать, а не пересобирать в браузере.` | `Prices changed for {n} item(s). Margins are computed server-side, so they must be recalculated rather than re-derived in the browser.` |
+
+If any test in the brief asserts on one of these strings, translate the
+assertion too, keeping its shape — do not weaken a regex into a substring
+match while translating it. Grep your changed files for Cyrillic before
+committing; the only permitted hits are pre-existing negative assertions in
+`App.test.tsx` checking that Russian strings are ABSENT.
+
+Everything else in the brief stands: the `useLivePrices` hook, the
+stale-item tracking, the `refetchInterval` polling fallback for the
+signed-out case, the production image, and the full-suite verification.
+
+## Two things earlier tasks settled that the brief cannot know
+
+- `RecipesPage.tsx` takes `{ skill, onSkillChange }` as props. There are no
+  routes and no `useSearchParams` anywhere. If you add state to that
+  component, it does not go in the URL.
+- The chat popup is `position: fixed` bottom-right and owns the
+  `WsProvider` consumer for chat. Your `useLivePrices` consumes the SAME
+  provider via `useWs()` — do not create a second connection.
