@@ -1,0 +1,30 @@
+# The backend's own compose file is included rather than copied, so the
+# service definitions have exactly one home and this file only adds what
+# is new: the built frontend and the nginx that fronts both.
+include:
+  - backend/docker-compose.yml
+
+services:
+  frontend:
+    build:
+      context: ./web
+      dockerfile: frontend/Dockerfile
+      args:
+        # Same-origin: the browser reaches the API through the nginx in
+        # front, not through the gateway's own port. Vite inlines this
+        # at build time, so it is an image argument rather than an
+        # environment variable.
+        VITE_API_URL: ${PUBLIC_ORIGIN:-http://localhost}
+    restart: unless-stopped
+    expose: ["80"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - gateway
