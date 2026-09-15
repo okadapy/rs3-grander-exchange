@@ -90,6 +90,12 @@ export function CharacterColumn({ onSelectSkill }: Props) {
                   sx={{
                     maxHeight: SKILL_LIST_MAX_HEIGHT,
                     overflowY: 'auto',
+                    // overflow-x: visible is not allowed next to an overflowing
+                    // y-axis, so the browser silently promotes it to auto and the
+                    // list gains a horizontal scrollbar the moment a row is too
+                    // wide. SkillRow is built to fit, and this keeps a future
+                    // regression from turning the column into a scrolling strip.
+                    overflowX: 'hidden',
                     border: 1,
                     borderColor: 'divider',
                     borderRadius: 1,
