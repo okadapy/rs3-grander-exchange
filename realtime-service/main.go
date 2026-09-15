@@ -67,14 +67,21 @@ func main() {
 		h.BroadcastPrice(id, []byte(payload))
 	})
 
-	// health debug: ping test event
+	// Keep-alive so idle clients and intermediary proxies can tell a
+	// live socket from a dead one. This used to be sent as a chat
+	// message, which meant every connected frontend rendered a junk
+	// entry in the chat log once a minute.
 	go func() {
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
-		for range t.C {
-			env := map[string]any{"ts": time.Now().UTC()}
-			b, _ := json.Marshal(env)
-			h.BroadcastChat(b) // no-op-ish heartbeat
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				b, _ := json.Marshal(map[string]any{"ts": time.Now().UTC()})
+				h.BroadcastHeartbeat(b)
+			}
 		}
 	}()
 

@@ -13,9 +13,9 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/rs3-market/backend/hiscore-service/internal/repository"
 	"github.com/rs3-market/backend/shared/config"
 	"github.com/rs3-market/backend/shared/models"
-	"github.com/rs3-market/backend/hiscore-service/internal/repository"
 )
 
 // RS3 skill order in the hiscores CSV — do not reorder.
@@ -29,9 +29,9 @@ var skillOrder = []string{
 }
 
 var modeToPath = map[string]string{
-	"normal":         "m=hiscore",
-	"ironman":        "m=hiscore_ironman",
-	"hardcore":       "m=hiscore_hardcore_ironman",
+	"normal":   "m=hiscore",
+	"ironman":  "m=hiscore_ironman",
+	"hardcore": "m=hiscore_hardcore_ironman",
 }
 
 type Service struct {

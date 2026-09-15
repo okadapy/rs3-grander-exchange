@@ -23,6 +23,17 @@ type PlayerSkill struct {
 
 // -------------------- recipe_db --------------------
 
+// APHSource records where ActionsPerHour came from, so the frontend can
+// show how much to trust a GP/h figure. The wiki rarely publishes a
+// real actions-per-hour value, so most recipes fall back to a per-skill
+// default — a number good enough to rank recipes against each other but
+// not to quote as a literal rate.
+const (
+	APHSourceWiki     = "wiki"
+	APHSourceDefault  = "default"
+	APHSourceOverride = "override"
+)
+
 type Recipe struct {
 	ID             uint          `gorm:"primaryKey" json:"id"`
 	Name           string        `gorm:"uniqueIndex;size:160" json:"name"`
@@ -33,9 +44,10 @@ type Recipe struct {
 	LevelReq       int           `json:"level_req"`
 	XPPerAction    float64       `json:"xp_per_action"`
 	ActionsPerHour int           `json:"actions_per_hour"`
+	APHSource      string        `gorm:"size:16" json:"aph_source"`
 	Members        bool          `json:"members"`
 	Source         string        `gorm:"size:64" json:"source"`
-	Inputs         []RecipeInput `gorm:"foreignKey:RecipeID" json:"inputs"`
+	Inputs         []RecipeInput `gorm:"foreignKey:RecipeID" json:"inputs,omitempty"`
 }
 
 type RecipeInput struct {
@@ -47,24 +59,58 @@ type RecipeInput struct {
 	IsIntermediate bool   `json:"is_intermediate"`
 }
 
-// -------------------- ge_db --------------------
-
-type PriceSnapshot struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	ItemID     int64     `gorm:"index:idx_item_ts,priority:1" json:"item_id"`
-	Timestamp  time.Time `gorm:"index:idx_item_ts,priority:2" json:"ts"`
-	BuyPrice   int64     `json:"buy"`
-	SellPrice  int64     `json:"sell"`
-	Volume     int64     `json:"volume"`
-	Normalized bool      `json:"normalized"`
+// GEIDMap maps a canonical item name to its Grand Exchange item ID.
+// Populated once per day from the wiki's Module:GEIDs/data.json.
+// Used to resolve recipe rows whose item_id is still 0 after
+// recipe-output-name matching (ores, logs, herbs — anything that is
+// gathered, not crafted).
+type GEIDMap struct {
+	ID     uint   `gorm:"primaryKey" json:"id"`
+	Name   string `gorm:"uniqueIndex;size:160" json:"name"`
+	ItemID int64  `gorm:"index" json:"item_id"`
 }
 
-type DailyChange struct {
-	ID        uint      `gorm:"primaryKey"`
-	ItemID    int64     `gorm:"index:idx_item_day,priority:1"`
-	Day       time.Time `gorm:"index:idx_item_day,priority:2"`
-	ChangePct float64
-	VolumeSum int64
+// TableName pins the table name. GORM's default for this struct is
+// "ge_id_maps" (it splits the GEID acronym), which is easy to get wrong
+// in the hand-written UPDATE ... JOIN statements that do the ID
+// backfills — and a join against a non-existent table fails the whole
+// backfill silently, leaving every gathered material unpriced.
+func (GEIDMap) TableName() string { return "geid_maps" }
+
+// ItemLimit is the Grand Exchange 4-hour buy limit for one item,
+// from the wiki's Module:GELimits/data.json.
+//
+// This is the difference between a theoretical margin and a tradeable
+// one: a craft that nets 500 GP on an item limited to 100 per 4 hours
+// can return at most 50k GP per 4 hours no matter how fast you click.
+// Without it, GP/h is an upper bound nobody can actually reach.
+type ItemLimit struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"uniqueIndex;size:160" json:"name"`
+	ItemID  int64  `gorm:"index" json:"item_id"`
+	Limit4h int    `gorm:"column:limit4h" json:"limit_4h"`
+}
+
+func (ItemLimit) TableName() string { return "item_limits" }
+
+// -------------------- ge_db --------------------
+
+// PriceSnapshot is one observation of an item's Grand Exchange price.
+//
+// Price is the GE *guide* price as published by Weirdgloop — the single
+// number Jagex exposes. RS3 has no public instant-buy / instant-sell
+// feed, so there is no real bid/ask spread in this data. Anything that
+// needs a buy price and a sell price must apply an explicit, declared
+// spread assumption on top of this (see calc-service). Earlier versions
+// of this struct carried separate BuyPrice and SellPrice fields holding
+// identical values, which read as a real spread and silently overstated
+// every margin.
+type PriceSnapshot struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ItemID    int64     `gorm:"index:idx_item_ts,priority:1" json:"item_id"`
+	Timestamp time.Time `gorm:"index:idx_item_ts,priority:2" json:"ts"`
+	Price     int64     `json:"price"`
+	Volume    int64     `json:"volume"`
 }
 
 // -------------------- chat_db --------------------

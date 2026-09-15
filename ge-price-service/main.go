@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/rs3-market/backend/ge-price-service/internal/client"
 	"github.com/rs3-market/backend/ge-price-service/internal/handler"
 	"github.com/rs3-market/backend/ge-price-service/internal/poller"
 	"github.com/rs3-market/backend/ge-price-service/internal/repository"
@@ -48,7 +49,8 @@ func main() {
 	}
 
 	wgc := weirdgloop.New(cfg.WeirdGloop)
-	svc := service.New(repo, log, c, wgc)
+	recipeClient := client.NewRecipeClient(cfg.Services.RecipeURL)
+	svc := service.New(repo, log, c, recipeClient)
 	p := poller.New(cfg, repo, c, wgc, log)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -62,6 +64,9 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.RequestIDAndLog(log))
 	h.Register(r)
+
+	admin := handler.NewAdmin(p, log)
+	admin.Register(r)
 	swagger.Register(r, "openapi/"+cfg.ServiceName+".yaml", cfg.ServiceName)
 
 	srv := &http.Server{Addr: ":" + itoa(cfg.Port), Handler: r}

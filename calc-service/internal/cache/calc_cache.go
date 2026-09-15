@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
-
 	"github.com/rs3-market/backend/shared/cache"
 )
 
@@ -33,6 +31,3 @@ func (cc *CalcCache) Set(key string, v interface{}) {
 	}
 	_ = cc.Cache.Set(key, string(body), cc.TTL)
 }
-
-// Expose the underlying redis for rate-limiting in chat (used by realtime).
-func (cc *CalcCache) Raw() *goredis.Client { return cc.Cache.RDB }

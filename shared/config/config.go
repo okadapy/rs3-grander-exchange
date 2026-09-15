@@ -19,6 +19,7 @@ type Config struct {
 	Services    ServicesConf   `mapstructure:"services"`
 	JWT         JWTConf        `mapstructure:"jwt"`
 	Chat        ChatConf       `mapstructure:"chat"`
+	Market      MarketConf     `mapstructure:"market"`
 
 	// Gateway-only fields
 	Routes    []RouteConfig   `mapstructure:"routes"`
@@ -59,6 +60,32 @@ type HiscoreConf struct {
 
 type PollerConf struct {
 	PollInterval time.Duration `mapstructure:"poll_interval"`
+}
+
+// MarketConf holds the trading assumptions that turn raw Grand Exchange
+// guide prices into numbers someone can act on. Every one of these is a
+// modelling choice rather than a fact we scrape, so they live in config
+// and are echoed back in API responses — a GP/h figure is only
+// meaningful next to the assumptions that produced it.
+type MarketConf struct {
+	// SpreadPct is the assumed round-trip gap between what you actually
+	// pay to buy and what you actually receive to sell, as a percentage
+	// of the guide price. RS3 publishes no bid/ask, so this is an
+	// explicit assumption: buys are modelled at price*(1+spread/2),
+	// sells at price*(1-spread/2). 0 reproduces the old behaviour of
+	// pretending you can transact at the guide price.
+	SpreadPct float64 `mapstructure:"spread_pct"`
+
+	// TaxPct is the Grand Exchange sales tax applied to the whole sale
+	// value, TaxCapPerItem caps it per item sold, and TaxExemptBelow
+	// skips the tax for items cheaper than the threshold.
+	TaxPct         float64 `mapstructure:"tax_pct"`
+	TaxCapPerItem  int64   `mapstructure:"tax_cap_per_item"`
+	TaxExemptBelow int64   `mapstructure:"tax_exempt_below"`
+
+	// DefaultActionsPerHour is the last-resort throughput used when a
+	// recipe has neither a wiki value nor a per-skill default.
+	DefaultActionsPerHour int `mapstructure:"default_actions_per_hour"`
 }
 
 type ServicesConf struct {
@@ -112,6 +139,12 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv("mysql.password", "RS3_DB_PASSWORD")
 	_ = v.BindEnv("redis.addr", "RS3_REDIS_ADDR")
 	_ = v.BindEnv("jwt.secret", "RS3_JWT_SECRET")
+
+	v.SetDefault("market.spread_pct", 2.0)
+	v.SetDefault("market.tax_pct", 2.0)
+	v.SetDefault("market.tax_cap_per_item", 5_000_000)
+	v.SetDefault("market.tax_exempt_below", 0)
+	v.SetDefault("market.default_actions_per_hour", 600)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err

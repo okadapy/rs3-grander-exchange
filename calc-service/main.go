@@ -42,7 +42,7 @@ func main() {
 	hc := client.NewHiscoreClient(cfg.Services.HiscoreURL)
 	cc := calccache.New(c)
 
-	svc := service.New(log, rc, pc, hc, cc)
+	svc := service.New(log, rc, pc, hc, cc, service.MarketFrom(cfg.Market))
 	h := handler.New(svc, log)
 
 	if cfg.Env != "local" {

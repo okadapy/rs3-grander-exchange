@@ -12,12 +12,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/rs3-market/backend/gateway/internal/handler"
-	gwmid "github.com/rs3-market/backend/gateway/internal/middleware"
-	"github.com/rs3-market/backend/gateway/internal/proxy"
 	"github.com/rs3-market/backend/shared/config"
 	"github.com/rs3-market/backend/shared/logger"
 	"github.com/rs3-market/backend/shared/middleware"
+
+	"github.com/rs3-market/backend/gateway/internal/handler"
+	gwmid "github.com/rs3-market/backend/gateway/internal/middleware"
+	"github.com/rs3-market/backend/gateway/internal/proxy"
 )
 
 func main() {
@@ -34,11 +35,11 @@ func main() {
 		log.Fatal("build routes", zap.Error(err))
 	}
 	log.Info("gateway routes compiled", zap.Int("count", len(routes)))
-	for _, r := range routes {
+	for _, rt := range routes {
 		log.Info("route",
-			zap.String("prefix", r.Prefix),
-			zap.String("target", r.Target.String()),
-			zap.Bool("websocket", r.WebSocket))
+			zap.String("prefix", rt.Prefix),
+			zap.String("target", rt.Target.String()),
+			zap.Bool("websocket", rt.WebSocket))
 	}
 
 	if cfg.Env != "local" {
@@ -48,21 +49,28 @@ func main() {
 	r.Use(
 		gin.Recovery(),
 		middleware.Recovery(log),
-		gwmid.CORS(cfg.CORS),
+		middleware.CORS(cfg.CORS),
 		gwmid.RateLimit(cfg.RateLimit),
 		middleware.RequestIDAndLog(log),
 	)
 
-	// Gateway-owned endpoints take priority — register them first.
+	// ---- gateway-owned routes ----
+	// These are registered before the proxy fallback so they win.
 	handler.Swagger(r, "openapi")
 	h := handler.NewHealth(cfg, log)
 	h.Register(r)
 
-	// Everything else is proxied.
+	// ---- everything else goes through the reverse proxy ----
+	//
+	// NoRoute fires for any path that didn't match one of the routes
+	// above. This includes:
+	//   /hiscore/foo, /recipes/1, /prices/latest?ids=1,2
+	//   and bare-prefix URLs like /hiscore (no trailing slash).
+	//
+	// We must NOT register a root-level catch-all (`/*any`) here —
+	// Gin panics during route insertion because /swagger, /health and
+	// the wildcard all compete at the same tree level.
 	r.NoRoute(proxy.Handler(routes, log))
-	// Also catch paths that match the route prefixes exactly (no trailing slash)
-	// so /hiscore, /recipes, etc. hit the proxy, not the 404 handler.
-	r.Any("/*any", proxy.Handler(routes, log))
 
 	srv := &http.Server{
 		Addr:              ":" + itoa(cfg.Port),

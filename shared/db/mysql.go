@@ -23,7 +23,7 @@ func Open(cfg config.MySQLConfig, logLevel string) (*gorm.DB, error) {
 	}
 
 	gdb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(gormLogLevel),
+		Logger:  logger.Default.LogMode(gormLogLevel),
 		NowFunc: func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {

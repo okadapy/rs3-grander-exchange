@@ -23,3 +23,23 @@ services:
   recipe_url: "http://recipe-service:8082"
   price_url: "http://ge-price-service:8083"
   hiscore_url: "http://hiscore-service:8081"
+
+# Trading assumptions. These are modelling choices, not scraped facts,
+# and every calc response echoes them back so a GP/h figure is never
+# read without them.
+market:
+  # Assumed round-trip gap between the price you actually buy at and the
+  # price you actually sell at, as a percentage of the GE guide price.
+  # RS3 publishes no bid/ask, so this is an explicit assumption rather
+  # than measured data. Buys are modelled at +half, sells at -half.
+  spread_pct: 2.0
+
+  # Grand Exchange sales tax, charged on the whole sale value and capped
+  # per item sold.
+  tax_pct: 2.0
+  tax_cap_per_item: 5000000
+  tax_exempt_below: 0
+
+  # Throughput used when a recipe has no wiki value and its skill has no
+  # default of its own.
+  default_actions_per_hour: 600

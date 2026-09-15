@@ -17,6 +17,12 @@ routes:
   - prefix: /recipes
     target: http://recipe-service:8082
     timeout: 30s
+  - prefix: /search
+    target: http://recipe-service:8082
+    timeout: 30s
+  - prefix: /items
+    target: http://recipe-service:8082
+    timeout: 30s
   - prefix: /prices
     target: http://ge-price-service:8083
     timeout: 20s

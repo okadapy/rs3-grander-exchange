@@ -23,21 +23,26 @@ type Client struct {
 	UserID   uint
 	Username string
 
-	mu          sync.RWMutex
-	subscribed  map[int64]struct{}
+	mu         sync.RWMutex
+	subscribed map[int64]struct{}
 }
 
 func (c *Client) Subscribe(id int64) {
-	c.mu.Lock(); defer c.mu.Unlock()
-	if c.subscribed == nil { c.subscribed = map[int64]struct{}{} }
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.subscribed == nil {
+		c.subscribed = map[int64]struct{}{}
+	}
 	c.subscribed[id] = struct{}{}
 }
 func (c *Client) Unsubscribe(id int64) {
-	c.mu.Lock(); defer c.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	delete(c.subscribed, id)
 }
 func (c *Client) IsSubscribed(id int64) bool {
-	c.mu.RLock(); defer c.mu.RUnlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	_, ok := c.subscribed[id]
 	return ok
 }
@@ -51,6 +56,14 @@ type Hub struct {
 	broadcast  chan Envelope // for global chat
 	mu         sync.RWMutex
 }
+
+// Envelope types sent to clients over the socket.
+const (
+	EnvelopePrice     = "price"
+	EnvelopeChat      = "chat"
+	EnvelopeHeartbeat = "heartbeat"
+	EnvelopeError     = "error"
+)
 
 type Envelope struct {
 	Type    string          `json:"type"`
@@ -84,7 +97,9 @@ func (h *Hub) Run() {
 				close(c.Send)
 				for id, set := range h.byItem {
 					delete(set, c)
-					if len(set) == 0 { delete(h.byItem, id) }
+					if len(set) == 0 {
+						delete(h.byItem, id)
+					}
 				}
 			}
 			h.mu.Unlock()
@@ -92,7 +107,9 @@ func (h *Hub) Run() {
 		case env := <-h.broadcast:
 			h.mu.RLock()
 			clients := make([]*Client, 0, len(h.clients))
-			for c := range h.clients { clients = append(clients, c) }
+			for c := range h.clients {
+				clients = append(clients, c)
+			}
 			h.mu.RUnlock()
 			body, _ := json.Marshal(env)
 			for _, c := range clients {
@@ -110,10 +127,12 @@ func (h *Hub) BroadcastPrice(itemID int64, payload []byte) {
 	h.mu.RLock()
 	targets := h.byItem[itemID]
 	clients := make([]*Client, 0, len(targets))
-	for c := range targets { clients = append(clients, c) }
+	for c := range targets {
+		clients = append(clients, c)
+	}
 	h.mu.RUnlock()
 
-	env := Envelope{Type: "price", Payload: payload}
+	env := Envelope{Type: EnvelopePrice, Payload: payload}
 	body, _ := json.Marshal(env)
 	for _, c := range clients {
 		select {
@@ -124,8 +143,24 @@ func (h *Hub) BroadcastPrice(itemID int64, payload []byte) {
 }
 
 func (h *Hub) BroadcastChat(payload []byte) {
-	env := Envelope{Type: "chat", Payload: payload}
-	h.broadcast <- env
+	h.broadcastEnvelope(Envelope{Type: EnvelopeChat, Payload: payload})
+}
+
+// BroadcastHeartbeat is a liveness ping, carried on its own envelope
+// type so clients can ignore it without filtering the chat stream.
+func (h *Hub) BroadcastHeartbeat(payload []byte) {
+	h.broadcastEnvelope(Envelope{Type: EnvelopeHeartbeat, Payload: payload})
+}
+
+// broadcastEnvelope never blocks the caller: a full broadcast buffer
+// drops the message rather than stalling the price subscriber, which
+// feeds every connected client.
+func (h *Hub) broadcastEnvelope(env Envelope) {
+	select {
+	case h.broadcast <- env:
+	default:
+		h.log.Warn("broadcast buffer full, dropping", zap.String("type", env.Type))
+	}
 }
 
 // --- client pump ---
@@ -140,13 +175,17 @@ func (h *Hub) ApplySubscription(c *Client, ids []int64, subscribe bool) {
 	for _, id := range ids {
 		if subscribe {
 			c.Subscribe(id)
-			if h.byItem[id] == nil { h.byItem[id] = map[*Client]struct{}{} }
+			if h.byItem[id] == nil {
+				h.byItem[id] = map[*Client]struct{}{}
+			}
 			h.byItem[id][c] = struct{}{}
 		} else {
 			c.Unsubscribe(id)
 			if set, ok := h.byItem[id]; ok {
 				delete(set, c)
-				if len(set) == 0 { delete(h.byItem, id) }
+				if len(set) == 0 {
+					delete(h.byItem, id)
+				}
 			}
 		}
 	}
