@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ func TestRoutesMatchOpenAPISpec(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	New(nil, zap.NewNop()).Register(r)
-	NewAdmin(nil, zap.NewNop()).Register(r)
+	NewAdmin(context.Background(), nil, zap.NewNop()).Register(r)
 
 	res, err := apicontract.Check(r, "../../../openapi/ge-price-service.yaml", []string{
 		// Dev-only poller controls; not routed through the gateway.

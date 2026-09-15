@@ -65,7 +65,7 @@ func main() {
 	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.RequestIDAndLog(log))
 	h.Register(r)
 
-	admin := handler.NewAdmin(p, log)
+	admin := handler.NewAdmin(ctx, p, log)
 	admin.Register(r)
 	swagger.Register(r, "openapi/"+cfg.ServiceName+".yaml", cfg.ServiceName)
 
