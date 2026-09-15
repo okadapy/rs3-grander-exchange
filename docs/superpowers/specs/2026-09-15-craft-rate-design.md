@@ -78,11 +78,18 @@ for smelting a full inventory of bars.
 
 Pure functions, no database and no HTTP, so they test directly:
 
-- `SmeltTicks(bar string, smithingLevel int) (int, bool)` — the table above.
+- `SmeltTicks(bar string, smithingLevel int) (int, bool)` — the smelting table.
+- `ForgeTicks(bars int, metal string, smithing, firemaking int) (int, bool)`
+  — the forging simulation described below.
+- `BarMetal(itemName string) (string, bool)` — recognises a bar and its
+  metal, shared by both Smithing paths.
 - `IsStackable(itemName string) bool` — the stackable families.
 - `SlotsPerCraft(inputs []models.RecipeInput) int`.
 - `ActionsPerHour(ticks, slotsPerCraft int, cfg Config) int` — the formula.
 - `Config` — `InventorySlots` (28), `BankTripTicks` (21), `TickSeconds` (0.6).
+
+The two Smithing tables (ticks-to-smelt by level, progress-per-bar and
+reheat milestones by metal) are constants in this package.
 
 ### `recipe-service`
 
@@ -100,9 +107,10 @@ One integration point: `chooseAPH` in
 
 1. `ActionsPerHourOverride` from the request → `aph_source: override`
 2. smelting, known bar, known player level → `ticks_level`
-3. numeric `ticks` on the recipe → `ticks`
-4. `aph` from the wiki → `wiki`
-5. configured default → `default`
+3. forging, known bar, known Smithing and Firemaking levels → `ticks_forge`
+4. numeric `ticks` on the recipe → `ticks`
+5. `aph` from the wiki → `wiki`
+6. configured default → `default`
 
 Player levels already reach calc through the `player` parameter; no extra
 call to hiscore-service is needed.
@@ -138,12 +146,73 @@ optional: key on the full parameter set, through the existing
 `openapi/combined.yaml` gains the route, then `make openapi`; the
 calc-service contract test enforces the match.
 
+## Anvil forging
+
+Forging is not a fixed number of ticks, which is why the infobox says
+`varies`. The player fills a progress meter by striking an anvil, and how
+fast it fills depends on how hot the item is.
+
+The mechanics, from the `Smithing` page:
+
+- A strike lands every 2 ticks, costs 10 heat, and adds
+  `base progress x heat multiplier`.
+- Base progress is 10, plus 1 at 99 Smithing.
+- Heat multiplier by share of maximum heat: high (67-100%) x2, medium
+  (34-66%) x1.6, low (1-33%) x1.3, zero x1.
+- `max heat = 300 + 3 x Smithing + 3 x Firemaking`.
+- Reheating from empty to full takes 6 ticks, dropping to 4 and then 2 at
+  per-metal Smithing milestones (Steel 22 and 26, Rune 54 and 58).
+
+Progress required is the bar count times a per-metal constant, and the
+constant is linear in tier:
+
+| Metal | Progress/bar | | Metal | Progress/bar |
+|---|---|---|---|---|
+| Bronze | 100 | | Orikalkum | 700 |
+| Iron | 200 | | Necronium | 800 |
+| Steel | 300 | | Bane, Obsidian | 900 |
+| Mithril | 400 | | Elder rune | 1000 |
+| Adamant | 500 | | Primal | 1100 |
+| Rune | 600 | | | |
+
+Checked against three pages: rune platebody 5 bars x 600 = 3000, rune
+dagger 2 x 600 = 1200, steel platebody 5 x 300 = 1500. All three match
+the prose on those pages.
+
+A recipe counts as forging when `facility = Anvil` and one of its inputs
+is a bar in the table. The bar count comes from that input's quantity, so
+the `+1 / +2 / +3` upgrade chain needs no special case: each step is its
+own recipe consuming the previous item plus its own bars, and the recipe
+tree already walks it.
+
+`rates.ForgeTicks(bars, metal string, smithing, firemaking int) int`
+simulates one item: start at full heat, strike until progress is met,
+reheat whenever heat reaches zero, and return total ticks. Deterministic,
+so it tests directly. The result feeds the same banking model as every
+other recipe.
+
+### Forging simplifications
+
+Stated because they bound how honest the number is:
+
+- **No perks, gear or consumables.** Rapid, Tinker, Careless, luminite
+  injectors, juju potions, Varrock armour and the Smithing cape reheat
+  perk together more than double progress per strike. None of it is
+  visible in a hiscore lookup, so the model assumes none of it and
+  reports a floor rather than a ceiling.
+- **No +50/+100 material heat bonus.** It raises maximum heat at certain
+  levels, but tier boundaries stay thirds of the *unbonused* maximum,
+  which makes the interaction fiddly for a small gain. Excluded, which
+  understates high-level rates slightly.
+- **No Superheat Item cycling.** Modelling optimal spell play would
+  describe a player nobody is, and it needs runes the calculator is not
+  costing.
+
+`aph_source` for these recipes is `ticks_forge`, so the frontend can say
+where the number came from and that it is a conservative one.
+
 ## Out of scope
 
-- **Anvil forging.** Progress and heat
-  (`max heat = 300 + 3×Smithing + 3×Firemaking`, three multiplier tiers,
-  trips back to the forge) is a subsystem of its own. Until it exists,
-  those recipes stay honestly marked `aph_source: default`.
 - **Scraping the `stackable` flag.** The family list in code covers the
   real cases; a pass over ~7000 item pages for one boolean does not pay.
 - **Double bar chance** (10% at high levels) — changes output, not speed.
@@ -161,6 +230,11 @@ the degenerate all-stackable case.
 
 `recipe-service` — the parser against `ticks = 3`, `ticks = varies`, an
 empty value and a missing field.
+
+Forging — the simulation against hand-computed cases: a steel platebody
+(1500 progress) at a level where heat is high throughout, one where the
+item cools into the low tier and needs a reheat, and the boundary where a
+reheat milestone changes the tick cost.
 
 `calc-service` — the precedence in `chooseAPH` and the `aph_source` each
 branch reports.
