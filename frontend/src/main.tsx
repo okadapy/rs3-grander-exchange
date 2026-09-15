@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './auth/AuthProvider';
+import { PlayerPrefsProvider } from './features/character/usePlayerPrefs';
 import { theme } from './theme/theme';
 import { WsProvider } from './ws/WsProvider';
 
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
         <BrowserRouter>
           <AuthProvider>
             <WsProvider>
-              <App />
+              <PlayerPrefsProvider>
+                <App />
+              </PlayerPrefsProvider>
             </WsProvider>
           </AuthProvider>
         </BrowserRouter>

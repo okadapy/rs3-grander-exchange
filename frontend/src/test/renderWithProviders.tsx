@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
+import { PlayerPrefsProvider } from '../features/character/usePlayerPrefs';
 import { theme } from '../theme/theme';
 import type { WebSocketLike } from '../ws/connection';
 import { WsProvider } from '../ws/WsProvider';
@@ -28,7 +29,9 @@ export function renderWithProviders(
         <ThemeProvider theme={theme}>
           <MemoryRouter initialEntries={[opts?.route ?? '/']}>
             <AuthProvider>
-              <WsProvider socketFactory={factory}>{children}</WsProvider>
+              <WsProvider socketFactory={factory}>
+                <PlayerPrefsProvider>{children}</PlayerPrefsProvider>
+              </WsProvider>
             </AuthProvider>
           </MemoryRouter>
         </ThemeProvider>

@@ -1,7 +1,9 @@
 import { http, HttpResponse } from 'msw';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it } from 'vitest';
 import App from './App';
+import { batchEntry, liquidity, recipe, snapshot } from './test/fixtures';
 import { server } from './test/msw/server';
 import { renderWithProviders } from './test/renderWithProviders';
 
@@ -16,6 +18,7 @@ function healthHandler() {
 // craft). ChatPopup's history fetch is gated on being expanded, so it does
 // not fire on mount and needs no handler here.
 beforeEach(() => {
+  localStorage.clear();
   server.use(
     http.get('http://localhost:8080/recipes', () => HttpResponse.json({ count: 0, recipes: [] })),
     http.get('http://localhost:8080/recipes/ids', () =>
@@ -64,4 +67,51 @@ it('shows a red dot when the gateway itself cannot be reached', async () => {
   renderWithProviders(<App />);
 
   expect(await screen.findByLabelText('Services unavailable')).toBeInTheDocument();
+});
+
+// The character column and the recipe table read the player name from one
+// provider; before that it was two independent useState copies and the name
+// typed on the left never reached /calc/batch, so no row was ever checked
+// against the player's levels. Observed through MSW rather than by spying on
+// the hook, because the request is the behaviour that matters.
+it('sends the name typed in the character column to the profitability calculation', async () => {
+  const players: (string | null)[] = [];
+  server.use(
+    healthHandler(),
+    http.get('http://localhost:8080/hiscore/Zezima', () =>
+      HttpResponse.json({
+        id: 2,
+        name: 'Zezima',
+        mode: 'normal',
+        fetched_at: '2026-09-15T10:24:24.873Z',
+        skills: [{ id: 421, player_id: 2, skill: 'Overall', level: 3232, xp: 5709998811, rank: 6520 }],
+      }),
+    ),
+    http.get('http://localhost:8080/recipes', () =>
+      HttpResponse.json({ count: 1, recipes: [recipe()] }),
+    ),
+    http.get('http://localhost:8080/recipes/ids', () =>
+      HttpResponse.json({ skill: '', min_level: 1, max_level: 120, count: 1, item_ids: [1603] }),
+    ),
+    http.get('http://localhost:8080/prices/latest', () =>
+      HttpResponse.json({ count: 1, prices: [snapshot()] }),
+    ),
+    http.get('http://localhost:8080/prices/stats/1603', () => HttpResponse.json(liquidity())),
+    http.get('http://localhost:8080/calc/batch', ({ request }) => {
+      players.push(new URL(request.url).searchParams.get('player'));
+      return HttpResponse.json({ count: 1, results: [batchEntry()] });
+    }),
+  );
+
+  renderWithProviders(<App />);
+
+  await screen.findByRole('row', { name: /Ruby/ });
+  await waitFor(() => expect(players).toEqual([null]));
+  expect(screen.getByText(/Character name is not set/)).toBeInTheDocument();
+
+  await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }));
+
+  await waitFor(() => expect(players.at(-1)).toBe('Zezima'));
+  expect(screen.queryByText(/Character name is not set/)).not.toBeInTheDocument();
 });
