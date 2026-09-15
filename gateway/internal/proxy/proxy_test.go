@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rs3-market/backend/shared/config"
+	"github.com/rs3-market/backend/shared/middleware"
 )
 
 func testRoutes(t *testing.T) []*Route {
@@ -190,5 +191,57 @@ func TestForwardedHostHeaderIsSet(t *testing.T) {
 
 	if got := <-hosts; got == "" {
 		t.Error("X-Forwarded-Host should carry the original host")
+	}
+}
+
+// Every service behind the gateway also answers on its own port during
+// development, so each one applies its own permissive CORS middleware.
+// Without stripping, a browser receives "Access-Control-Allow-Origin"
+// twice and refuses the response outright — the gateway's own header is
+// correct, and the duplicate is what breaks it.
+func TestProxyStripsUpstreamCORSHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "600")
+		w.Header().Set("X-Upstream", "kept")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	routes, err := Build([]config.RouteConfig{{Prefix: "/prices", Target: upstream.URL}}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.CORS(config.CORSConfig{AllowedOrigins: []string{"*"}}))
+	r.NoRoute(Handler(routes, zap.NewNop()))
+	gw := httptest.NewServer(r)
+	defer gw.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, gw.URL+"/prices/latest", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	resp, err := gw.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	for _, h := range []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Allow-Headers",
+		"Access-Control-Expose-Headers",
+		"Access-Control-Max-Age",
+	} {
+		if got := resp.Header.Values(h); len(got) != 1 {
+			t.Errorf("%s = %v (%d values), want exactly one — the gateway's", h, got, len(got))
+		}
+	}
+	if got := resp.Header.Get("X-Upstream"); got != "kept" {
+		t.Errorf("X-Upstream = %q, want the upstream's own headers left alone", got)
 	}
 }

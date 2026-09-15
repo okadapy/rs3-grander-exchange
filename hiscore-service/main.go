@@ -58,7 +58,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.RequestIDAndLog(log))
+	r.Use(gin.Recovery(), middleware.Recovery(log), middleware.CORSDefault(), middleware.RequestIDAndLog(log))
 	h.Register(r)
 	swagger.Register(r, "openapi/"+cfg.ServiceName+".yaml", cfg.ServiceName)
 
