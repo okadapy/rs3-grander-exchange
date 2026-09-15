@@ -18,7 +18,7 @@ export function formatCompact(value: number | null | undefined): string {
   return `${trim(value / 1_000_000_000, 2)}B`;
 }
 
-const integerFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+const integerFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 export function formatInt(value: number | null | undefined): string {
   if (isAbsent(value)) return ABSENT;

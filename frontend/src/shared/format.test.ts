@@ -29,10 +29,11 @@ describe('formatCompact', () => {
 });
 
 describe('formatInt', () => {
-  it('groups thousands with a narrow space and handles absent values', () => {
+  it('groups thousands the way the English UI reads and handles absent values', () => {
     expect(formatInt(null)).toBe('—');
     expect(formatInt(99)).toBe('99');
-    expect(formatInt(171_851)).toBe('171 851');
+    expect(formatInt(171_851)).toBe('171,851');
+    expect(formatInt(3_232)).toBe('3,232');
   });
 });
 

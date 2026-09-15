@@ -27,11 +27,7 @@ it('shows the overall summary and one tile per skill', async () => {
   await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
   await userEvent.click(screen.getByRole('button', { name: 'Show' }));
 
-  // formatInt (Task 2) groups thousands with a narrow no-break space, so the
-  // rendered text is "3 232", not the literal digit string "3232".
-  expect(
-    await screen.findByText((content) => content.replace(/\s/g, '') === '3232'),
-  ).toBeInTheDocument();
+  expect(await screen.findByText('3,232')).toBeInTheDocument();
   expect(screen.getByRole('img', { name: 'Crafting' })).toBeInTheDocument();
   expect(screen.getByText('Crafting')).toBeInTheDocument();
   expect(screen.queryByText('Overall')).not.toBeInTheDocument();
@@ -46,7 +42,7 @@ it('puts the total level next to the player name', async () => {
 
   const heading = await screen.findByTestId('player-summary');
   expect(heading).toHaveTextContent('Zezima');
-  expect(heading).toHaveTextContent(/3\s*232/);
+  expect(heading).toHaveTextContent('3,232');
 });
 
 it('reports the fetch time quietly rather than prominently', async () => {
@@ -83,7 +79,7 @@ it('remembers the last name across mounts', async () => {
   const first = renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
   await userEvent.type(screen.getByLabelText('Player name'), 'Zezima');
   await userEvent.click(screen.getByRole('button', { name: 'Show' }));
-  await screen.findByText((content) => content.replace(/\s/g, '') === '3232');
+  await screen.findByText('3,232');
   first.unmount();
 
   renderWithProviders(<CharacterColumn onSelectSkill={() => {}} />);
