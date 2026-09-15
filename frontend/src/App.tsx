@@ -38,7 +38,22 @@ export default function App() {
           <CharacterColumn onSelectSkill={setSelectedSkill} />
         </Box>
 
-        <Box component="main" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', p: 2 }}>
+        {/* overflowY, not hidden: the table, its notices and the pagination
+            row together outgrow a 1080p viewport, and with the overflow
+            clipped the Back/Next buttons were unreachable rather than merely
+            below the fold. The column layout lets the grid inside take the
+            remaining height instead of forcing that overflow. */}
+        <Box
+          component="main"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            overflowY: 'auto',
+            p: 2,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <RecipesPage skill={selectedSkill} onSkillChange={setSelectedSkill} />
         </Box>
       </Box>

@@ -18,6 +18,11 @@ import { useLivePrices } from './useLivePrices';
 
 const PAGE_SIZE = 25;
 
+// The grid gives way to the notices above it instead of pushing the
+// pagination row out of the viewport, but never below a height that would
+// leave the DataGrid with no rows visible at all.
+const GRID_MIN_HEIGHT = 320;
+
 interface Props {
   skill: string;
   onSkillChange: (skill: string) => void;
@@ -134,7 +139,7 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
   };
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} sx={{ flex: 1 }}>
       <Typography variant="h5" component="h2">Recipes</Typography>
 
       <RecipeFilters value={filters} onChange={handleFilters} />
@@ -193,7 +198,7 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
 
       <QueryState query={backboneQuery}>
         {() => (
-          <Box sx={{ height: 640 }}>
+          <Box sx={{ flex: 1, minHeight: GRID_MIN_HEIGHT }}>
             <DataGrid
               rows={rows}
               columns={recipeColumns}
