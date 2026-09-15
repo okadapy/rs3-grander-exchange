@@ -17,9 +17,6 @@ export function usePlayer(name: string, mode: HiscoreMode) {
       const { data, error, response } = await api.GET('/hiscore/{name}', {
         params: { path: { name }, query: { mode } },
       });
-      if (response.status === 404) {
-        throw new Error('Player not found or hiscores unavailable');
-      }
       if (error || !data) throw failure(response, error, 'Failed to read hiscores');
       return data;
     },

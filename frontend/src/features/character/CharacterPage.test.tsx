@@ -72,9 +72,9 @@ it('reports a missing player as the API describes it, not as a crash', async () 
   await userEvent.type(screen.getByLabelText('Player name'), 'Nobody');
   await userEvent.click(screen.getByRole('button', { name: 'Show' }));
 
-  expect(
-    await screen.findByText('Player not found or hiscores unavailable'),
-  ).toBeInTheDocument();
+  // describeFailure passes a server-authored message through untouched, so
+  // the column says what the API said rather than a message of its own.
+  expect(await screen.findByText('player not found')).toBeInTheDocument();
 });
 
 it('remembers the last name across mounts', async () => {
