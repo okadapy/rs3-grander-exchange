@@ -106,3 +106,35 @@ func TestChooseAPHFallsBackToDefault(t *testing.T) {
 		t.Errorf("chooseAPH = %d, %q; want 700, default", aph, src)
 	}
 }
+
+// The scraped facility column is not a single value: 21 anvil recipes
+// carry "Anvil, Forge" and two furnace ones "Furnace, Altar of nature".
+// Comparing the whole string kept every one of them on the house
+// default even for a maxed player.
+func TestChooseAPHMatchesACompositeFacility(t *testing.T) {
+	e := testEvaluator(Options{Player: "someone"},
+		map[string]int{"smithing": 99, "firemaking": 99})
+	rec := models.Recipe{Skill: "Smithing", Facility: "Anvil, Forge",
+		OutputItemName: "Rune platebody",
+		Inputs:         []models.RecipeInput{{ItemName: "Rune bar", Quantity: 5}}}
+
+	if _, src := e.chooseAPH(rec); src != models.APHSourceTicksForge {
+		t.Errorf("aph_source = %q, want ticks_forge for a comma-separated facility", src)
+	}
+}
+
+// Dungeoneering smithing is a different mechanic at different rates, so
+// its 263 anvil and 10 furnace recipes must keep falling through to the
+// default. This is why the match splits on commas but deliberately
+// leaves parentheses alone.
+func TestChooseAPHDoesNotClaimDungeoneeringFacilities(t *testing.T) {
+	e := testEvaluator(Options{Player: "someone"},
+		map[string]int{"smithing": 99, "firemaking": 99})
+	rec := models.Recipe{Skill: "Smithing", Facility: "Anvil (Dungeoneering)",
+		OutputItemName: "Novite platebody",
+		Inputs:         []models.RecipeInput{{ItemName: "Rune bar", Quantity: 5}}}
+
+	if _, src := e.chooseAPH(rec); src == models.APHSourceTicksForge {
+		t.Error("a Dungeoneering anvil must not be modelled with the overworld forge rates")
+	}
+}

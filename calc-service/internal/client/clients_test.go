@@ -123,19 +123,23 @@ func TestHiscoreClientEscapesName(t *testing.T) {
 }
 
 func TestRecipeClientAllItemIDs(t *testing.T) {
-	var gotPath string
+	var gotPath, gotSkill string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		gotSkill = r.URL.Query().Get("skill")
 		_, _ = w.Write([]byte(`{"skill":"","min_level":0,"max_level":0,"count":3,"item_ids":[100,200,300]}`))
 	}))
 	defer srv.Close()
 
-	got, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background())
+	got, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background(), "")
 	if err != nil {
 		t.Fatalf("AllItemIDs: %v", err)
 	}
 	if gotPath != "/recipes/ids" {
 		t.Errorf("path = %q, want /recipes/ids", gotPath)
+	}
+	if gotSkill != "" {
+		t.Errorf("skill = %q, want no skill parameter when none was asked for", gotSkill)
 	}
 	want := []int64{100, 200, 300}
 	if len(got) != len(want) {
@@ -148,6 +152,25 @@ func TestRecipeClientAllItemIDs(t *testing.T) {
 	}
 }
 
+// The skill filter belongs upstream: recipe-service applies it in SQL,
+// so a single-skill ranking walks that skill's recipes instead of all
+// 5800 and discarding most of them afterwards.
+func TestRecipeClientAllItemIDsSendsTheSkillFilter(t *testing.T) {
+	var gotSkill string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSkill = r.URL.Query().Get("skill")
+		_, _ = w.Write([]byte(`{"item_ids":[100]}`))
+	}))
+	defer srv.Close()
+
+	if _, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background(), "Smithing"); err != nil {
+		t.Fatalf("AllItemIDs: %v", err)
+	}
+	if gotSkill != "Smithing" {
+		t.Errorf("skill = %q, want Smithing passed through to /recipes/ids", gotSkill)
+	}
+}
+
 func TestRecipeClientAllItemIDsSurfacesUpstreamStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -155,7 +178,7 @@ func TestRecipeClientAllItemIDsSurfacesUpstreamStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background()); err == nil {
+	if _, err := NewRecipeClient(srv.URL).AllItemIDs(context.Background(), ""); err == nil {
 		t.Fatal("expected an error for a 500 from recipe-service")
 	}
 }

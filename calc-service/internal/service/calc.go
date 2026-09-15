@@ -28,7 +28,7 @@ const maxCombinationsPerNode = 64
 // cacheVersion is mixed into every cache key. Bump it whenever the
 // output shape or the arithmetic changes, so results computed under the
 // old model are never served after a deploy.
-const cacheVersion = "v4"
+const cacheVersion = "v5"
 
 type Service struct {
 	log    *zap.Logger
@@ -156,7 +156,20 @@ type Result struct {
 	Cached      bool         `json:"cached"`
 }
 
+// levelLookup defers the player's hiscore lookup to the point where it
+// is actually needed. Calculate resolves lazily, so a cache hit still
+// costs no round-trip; Top resolves once up front and hands every item
+// on the walk the same answer, instead of asking the hiscores again per
+// item across the whole catalogue.
+type levelLookup func() map[string]int
+
 func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*Result, error) {
+	return s.calculate(ctx, itemID, opts, func() map[string]int {
+		return s.playerLevelsOrNil(ctx, opts)
+	})
+}
+
+func (s *Service) calculate(ctx context.Context, itemID int64, opts Options, levelsOf levelLookup) (*Result, error) {
 	market := s.resolveMarket(opts)
 
 	key := cacheKey(itemID, opts, market)
@@ -180,24 +193,20 @@ func (s *Service) Calculate(ctx context.Context, itemID int64, opts Options) (*R
 		return nil, err
 	}
 
-	// Buy limits and player levels are enrichment, not preconditions.
-	// Losing either degrades the answer; it should not fail the request.
+	// Buy limits are enrichment, not a precondition. Losing them
+	// degrades the answer; it should not fail the request.
 	limits := map[int64]int{}
 	if l, err := s.recipe.BuyLimits(ctx, ids); err != nil {
-		s.log.Debug("buy limits unavailable", zap.Error(err))
+		// Warn, not Debug: with no limits every path falls back to the
+		// unconstrained GP/h, and a /calc/top walk in that state
+		// silently degenerates into the raw ranking this model exists
+		// to replace.
+		s.log.Warn("buy limits unavailable", zap.Error(err))
 	} else {
 		limits = l
 	}
 
-	var levels map[string]int
-	if opts.Player != "" {
-		if lv, err := s.playerLevels(ctx, opts.Player, opts.Mode); err != nil {
-			s.log.Debug("hiscore lookup failed",
-				zap.String("player", opts.Player), zap.Error(err))
-		} else {
-			levels = lv
-		}
-	}
+	levels := levelsOf()
 
 	ev := &evaluator{market: market, prices: prices, limits: limits, opts: opts, levels: levels}
 	paths := ev.expand(tree.Root)
@@ -259,6 +268,22 @@ func assumptionsFor(market Market, opts Options) Assumptions {
 		BankTripTicks:  market.BankTripTicks,
 		Boosts:         opts.BoostsRaw,
 	}
+}
+
+// playerLevelsOrNil resolves the player's levels, or nil when there is
+// no player or the hiscores are unreachable. Losing them degrades the
+// answer; it does not fail the request.
+func (s *Service) playerLevelsOrNil(ctx context.Context, opts Options) map[string]int {
+	if opts.Player == "" {
+		return nil
+	}
+	levels, err := s.playerLevels(ctx, opts.Player, opts.Mode)
+	if err != nil {
+		s.log.Debug("hiscore lookup failed",
+			zap.String("player", opts.Player), zap.Error(err))
+		return nil
+	}
+	return levels
 }
 
 func (s *Service) playerLevels(ctx context.Context, name, mode string) (map[string]int, error) {
@@ -508,7 +533,7 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 	if buyCost > 0 {
 		pr.ROIPct = profit / buyCost * 100.0
 	}
-	pr.Throughput = e.throughput(bought, profit, pr.GPPerHour, float64(aph))
+	pr.Throughput = e.throughput(bought, profit, totalHours)
 	return &pr
 }
 
@@ -519,7 +544,15 @@ func (e *evaluator) evaluate(node *client.Node, craftable []childPlan, assignmen
 // thousand items an hour out of a material you may only buy a hundred of
 // every four hours. Only bought inputs count — a crafted input is
 // produced, not purchased, so no limit applies to it.
-func (e *evaluator) throughput(bought []models.RecipeInput, profitPerCraft, gpPerHour, aph float64) *Throughput {
+//
+// A buy limit is a ceiling on finished items, so the click-rate side of
+// the comparison is the rate the *whole path* finishes at, 1/totalHours
+// — not the root step's actions per hour. On a five-step chain one
+// finished item costs five steps' worth of time, so the root step's own
+// rate is roughly five times the rate finished items appear at, and
+// comparing against it made the "limited" figure come out five times
+// the unconstrained one: the opposite of a cap.
+func (e *evaluator) throughput(bought []models.RecipeInput, profitPerCraft, totalHours float64) *Throughput {
 	best := (*Throughput)(nil)
 	for _, in := range bought {
 		limit, ok := e.limits[in.ItemID]
@@ -539,7 +572,10 @@ func (e *evaluator) throughput(bought []models.RecipeInput, profitPerCraft, gpPe
 	if best == nil {
 		return nil
 	}
-	best.CraftsPerHour = math.Min(aph, float64(best.MaxCraftsPer4h)/4)
+	best.CraftsPerHour = float64(best.MaxCraftsPer4h) / 4
+	if totalHours > 0 {
+		best.CraftsPerHour = math.Min(1/totalHours, best.CraftsPerHour)
+	}
 	best.GPPerHour = profitPerCraft * best.CraftsPerHour
 	return best
 }
@@ -571,7 +607,7 @@ func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
 	if r.Skill == "Smithing" && e.levels != nil {
 		smithing := e.level("Smithing")
 
-		if r.Facility == "Furnace" {
+		if facilityMatches(r.Facility, "Furnace") {
 			if metal, ok := rates.BarMetal(r.OutputItemName); ok {
 				if ticks, ok := rates.SmeltTicks(metal, smithing); ok {
 					return rates.ActionsPerHour(ticks, slots, cfg),
@@ -580,7 +616,7 @@ func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
 			}
 		}
 
-		if r.Facility == "Anvil" {
+		if facilityMatches(r.Facility, "Anvil") {
 			for _, in := range r.Inputs {
 				metal, ok := rates.BarMetal(in.ItemName)
 				if !ok {
@@ -611,6 +647,27 @@ func (e *evaluator) chooseAPH(r models.Recipe) (int, string) {
 		return r.ActionsPerHour, src
 	}
 	return e.market.DefaultActionsPerHour, models.APHSourceDefault
+}
+
+// facilityMatches reports whether the scraped facility column names
+// want as one of its comma-separated alternatives.
+//
+// The column mixes composite values ("Anvil, Forge", "Furnace, Altar of
+// nature") with location-qualified ones ("Anvil (Dungeoneering)"). We
+// split on commas and match a trimmed token exactly, deliberately
+// leaving parentheses alone: stripping them would recover a couple of
+// dozen location-qualified recipes but would also swallow the 263
+// Dungeoneering anvil and 10 Dungeoneering furnace recipes, which are a
+// different mechanic at different rates. Those stay on the house
+// default, which says it is a house default, rather than being given a
+// tick model that does not describe them.
+func facilityMatches(facility, want string) bool {
+	for _, part := range strings.Split(facility, ",") {
+		if strings.TrimSpace(part) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- post-processing ----

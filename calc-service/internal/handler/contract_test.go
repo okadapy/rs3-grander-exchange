@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -41,16 +42,31 @@ func TestBatchRouteIsNotSwallowedByItemIDParam(t *testing.T) {
 	}
 }
 
-// /calc/top is a static sibling of /calc/:itemID too. If the param route
-// were registered first, "top" would be parsed as an item ID.
-func TestTopRouteIsNotSwallowedByItemIDParam(t *testing.T) {
+// A request to /calc/top must reach the ranking handler rather than
+// /calc/:itemID with itemID="top". The error body is what makes this
+// load-bearing: both handlers reject an empty query with a 400, but
+// only h.top names the metric, while h.calc says "invalid item id".
+//
+// This is not a test of registration order. Gin 1.10 prefers the static
+// segment whichever way round the two are registered, so an assertion
+// about order would hold with the order reversed and prove nothing.
+// Registering static-first stays a convention of this file; what is
+// verified here is only where the request actually lands.
+func TestTopRequestReachesTheRankingHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	New(nil, zap.NewNop()).Register(r)
 
-	routes := apicontract.RegisteredRoutes(r)
-	if !routes["GET /calc/top"] {
-		t.Error("GET /calc/top must be registered as a static route")
+	req := httptest.NewRequest(http.MethodGet, "/calc/top", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("GET /calc/top = %d, want 400 from the ranking handler", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "metric") {
+		t.Errorf("error body = %s; want the ranking handler's complaint about metric, "+
+			"not /calc/:itemID parsing \"top\" as an item id", w.Body.String())
 	}
 }
 

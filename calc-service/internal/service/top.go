@@ -67,6 +67,12 @@ type TopRow struct {
 	APHSource        string  `json:"aph_source"`
 	Complete         bool    `json:"complete"`
 	BindingItemName  string  `json:"binding_item_name,omitempty"`
+
+	// MeetsRequirements is nil unless a player was supplied, exactly as
+	// on PathResult: with no hiscore data "you qualify" would be a
+	// guess presented as fact. It is carried straight from the path
+	// applySkillRequirements already annotated.
+	MeetsRequirements *bool `json:"meets_requirements,omitempty"`
 }
 
 type TopOptions struct {
@@ -83,7 +89,7 @@ type TopResponse struct {
 	Assumptions Assumptions `json:"assumptions"`
 }
 
-// sortTop orders rows best-first.
+// sortTop orders rows best-first: see rowLess for the precedence.
 //
 // The money metric sorts on GPPerHourLimited, the buy-limit-bound rate,
 // not GPPerHour. The raw figure multiplies one craft's profit by a full
@@ -103,15 +109,56 @@ func betterRow(a, b TopRow, m Metric) bool {
 	return rowLess(b, a, m)
 }
 
+// rowLess is the whole ordering, and it is deliberately the same
+// precedence sortPaths uses on /calc/{itemID}: a path the player cannot
+// perform is not a better answer than one they can, whatever its rate,
+// and neither is an incomplete path whose money figures are upper
+// bounds. Two routes disagreeing about which path represents an item
+// was a defect in its own right.
+//
+// Achievability is inert without a player — MeetsRequirements is nil on
+// every row then, so every row counts as achievable — which is why
+// there is no explicit check on opts.Player here. Unachievable rows are
+// ordered last rather than dropped: a caller browsing without a player
+// must still see the whole catalogue.
+//
+// ItemID breaks the final tie. Rows are collected out of a map, so
+// without it sort.SliceStable preserves a randomized order and equal
+// values change places between two identical requests — visible at the
+// limit boundary, where it changes which item is returned at all.
 func rowLess(a, b TopRow, m Metric) bool {
+	if am, bm := meetsRow(a), meetsRow(b); am != bm {
+		return !am
+	}
+	if a.Complete != b.Complete {
+		return !a.Complete
+	}
+	if av, bv := metricValue(a, m), metricValue(b, m); av != bv {
+		return av < bv
+	}
+	return a.ItemID > b.ItemID
+}
+
+func metricValue(r TopRow, m Metric) float64 {
 	switch m {
 	case MetricXPPerHour:
-		return a.XPPerHour < b.XPPerHour
+		return r.XPPerHour
 	case MetricGPPerXP:
-		return a.GPPerXP < b.GPPerXP
+		return r.GPPerXP
 	default: // MetricGPPerHour
-		return a.GPPerHourLimited < b.GPPerHourLimited
+		return r.GPPerHourLimited
 	}
+}
+
+func meetsRow(r TopRow) bool {
+	return r.MeetsRequirements == nil || *r.MeetsRequirements
+}
+
+// matchesSkill applies the skill filter. Case-insensitive because the
+// filter arrives from a query string, where "smithing" and "Smithing"
+// are the same request.
+func matchesSkill(r TopRow, skill string) bool {
+	return skill == "" || strings.EqualFold(r.Skill, skill)
 }
 
 // rowFromPath maps one evaluated PathResult onto a ranked TopRow.
@@ -140,6 +187,7 @@ func rowFromPath(itemID int64, p PathResult) TopRow {
 	if p.Throughput != nil {
 		row.BindingItemName = p.Throughput.BindingItemName
 	}
+	row.MeetsRequirements = p.MeetsRequirements
 	return row
 }
 
@@ -150,20 +198,39 @@ func rowFromPath(itemID int64, p PathResult) TopRow {
 func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error) {
 	opts.Limit = clampLimit(opts.Limit)
 
-	key := topCacheKey(opts)
+	market := s.resolveMarket(opts.Calc)
+	key := topCacheKey(opts, market)
 	var cached TopResponse
 	if s.cc.Get(key, &cached) {
 		return cached, nil
 	}
 
-	ids, err := s.recipe.AllItemIDs(ctx)
+	// The skill filter goes upstream: /recipes/ids applies it in SQL,
+	// so a single-skill ranking evaluates that skill's recipes instead
+	// of all 5800 and discarding most of them. The per-row check below
+	// still stands — an item can be produced by more than one recipe.
+	ids, err := s.recipe.AllItemIDs(ctx, opts.Skill)
 	if err != nil {
 		return TopResponse{}, fmt.Errorf("list item ids: %w", err)
 	}
 
+	// Resolved once for the whole walk rather than per item: with a
+	// player set, the per-item lookup meant one hiscore round-trip per
+	// catalogue entry.
+	levels := s.playerLevelsOrNil(ctx, opts.Calc)
+	levelsOf := func() map[string]int { return levels }
+
 	best := make(map[int64]TopRow, len(ids))
 	for _, id := range ids {
-		res, err := s.Calculate(ctx, id, opts.Calc)
+		// A dead request must not produce a ranking. Every item left in
+		// the walk would fail instantly, and the truncated result would
+		// be cached under the full parameter key and served to everyone
+		// else for the rest of the TTL.
+		if err := ctx.Err(); err != nil {
+			return TopResponse{}, err
+		}
+
+		res, err := s.calculate(ctx, id, opts.Calc, levelsOf)
 		if err != nil {
 			// One unpriceable item must not fail the whole ranking. It
 			// is simply absent from the results, the same reasoning
@@ -173,7 +240,7 @@ func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error)
 		}
 		for _, p := range res.Paths {
 			row := rowFromPath(id, p)
-			if opts.Skill != "" && !strings.EqualFold(row.Skill, opts.Skill) {
+			if !matchesSkill(row, opts.Skill) {
 				continue
 			}
 			if cur, ok := best[id]; !ok || betterRow(row, cur, opts.Metric) {
@@ -201,25 +268,28 @@ func (s *Service) Top(ctx context.Context, opts TopOptions) (TopResponse, error)
 		// nor its price data, so every item's Assumptions block under
 		// these options is identical, and computing it up front holds
 		// even when every item in the catalogue fails to price.
-		Assumptions: assumptionsFor(s.resolveMarket(opts.Calc), opts.Calc),
+		Assumptions: assumptionsFor(market, opts.Calc),
 	}
 	s.cc.Set(key, out)
 	return out, nil
 }
 
 // topCacheKey keys on the full parameter set: the ranking metric, the
-// skill filter and limit, and every Options field that changes the
-// price computed for an item. Missing one here would serve one
-// player's or one boost stack's ranking to another's request.
-func topCacheKey(opts TopOptions) string {
-	spread := "nil"
-	if opts.Calc.SpreadPctOverride != nil {
-		spread = fmt.Sprintf("%.4f", *opts.Calc.SpreadPctOverride)
-	}
+// skill filter and limit, every Options field that changes the price
+// computed for an item, and the resolved market rather than the
+// caller's spread override. Missing one here would serve one player's
+// or one boost stack's ranking to another's request; keying on the
+// override rather than the resolved market let an operator change tax,
+// inventory slots or bank trip ticks and invalidate every per-item
+// entry (cacheKey mixes them in) while every ranking kept answering
+// from the old model.
+func topCacheKey(opts TopOptions, m Market) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "metric=%s|skill=%s|limit=%d|aph=%d|p=%s|m=%s|spread=%s|inc=%v|boosts=%s|%s",
+	fmt.Fprintf(h, "metric=%s|skill=%s|limit=%d|aph=%d|p=%s|m=%s|inc=%v|boosts=%s|spread=%.4f|tax=%.4f|cap=%d|ex=%d|inv=%d|bank=%d|%s",
 		opts.Metric, strings.ToLower(opts.Skill), opts.Limit,
 		opts.Calc.ActionsPerHourOverride, strings.ToLower(opts.Calc.Player), opts.Calc.Mode,
-		spread, opts.Calc.IncludeIncomplete, strings.ToLower(opts.Calc.BoostsRaw), cacheVersion)
+		opts.Calc.IncludeIncomplete, strings.ToLower(opts.Calc.BoostsRaw),
+		m.SpreadPct, m.TaxPct, m.TaxCapPerItem, m.TaxExemptBelow,
+		m.InventorySlots, m.BankTripTicks, cacheVersion)
 	return "top:" + hex.EncodeToString(h.Sum(nil))
 }

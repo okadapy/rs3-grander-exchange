@@ -544,3 +544,50 @@ func TestCacheKeyIgnoresPlayerNameCasing(t *testing.T) {
 		t.Error("player names differing only in case should share a cache entry")
 	}
 }
+
+// A buy limit caps how often a *finished item* can be made, so it has
+// to be compared against the rate the whole path completes at, not the
+// root step's actions per hour. On a two-step path the finished item
+// appears half as often as the root step runs, and comparing against
+// the root rate made the "limited" figure come out at twice the
+// unconstrained one — a cap that inflates is not a cap.
+func TestThroughputCapIsTheWholePathRateNotTheRootStep(t *testing.T) {
+	child := &client.Node{
+		Recipe: recipe("Bar", 200, 1, "Smithing", 1, 10, 100, input(300, "Ore", 1)),
+	}
+	node := &client.Node{
+		Recipe: recipe("Widget", 100, 1, "Crafting", 10, 20, 100,
+			input(200, "Bar", 1),
+			input(301, "Flux", 1),
+		),
+		Children: []*client.Node{child},
+	}
+	ev := &evaluator{
+		market: noSpread(),
+		prices: snapshots(map[int64]int64{100: 10000, 200: 1000, 300: 100, 301: 50}),
+		// Generous enough that the limit itself never binds: what is
+		// under test is which click rate it is compared against.
+		limits: map[int64]int{301: 1_000_000},
+	}
+
+	p := twoStepPath(t, ev.expand(node))
+
+	approx(t, p.TotalHours, 0.02, "total hours")   // 1/100 for each step
+	approx(t, p.GPPerHour, 492_500, "gp per hour") // 9850 profit / 0.02
+	approx(t, p.Throughput.CraftsPerHour, 50, "crafts per hour")
+	if p.Throughput.GPPerHour > p.GPPerHour {
+		t.Errorf("limited rate (%v) exceeds the unconstrained rate (%v)",
+			p.Throughput.GPPerHour, p.GPPerHour)
+	}
+}
+
+func twoStepPath(t *testing.T, paths []PathResult) PathResult {
+	t.Helper()
+	for _, p := range paths {
+		if len(p.Steps) == 2 {
+			return p
+		}
+	}
+	t.Fatal("expected a path that crafts the child rather than buying it")
+	return PathResult{}
+}

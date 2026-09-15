@@ -60,6 +60,12 @@ above — sorting on the raw `gp_per_hour` would put a godsword nobody
 forges six hundred times an hour above the things people actually
 craft.
 
+With a `player`, every row carries `meets_requirements` and the rows
+that player cannot perform sort below the ones they can, the metric
+deciding the order inside each group. They are ranked last rather than
+dropped — without a player there is nothing to filter against, and a
+caller browsing the catalogue should still see all of it.
+
 Two smaller honesty flags:
 
 - `CalcPath.complete` — `false` means an input had no price and was

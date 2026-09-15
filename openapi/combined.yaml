@@ -557,6 +557,12 @@ paths:
         nobody can produce at that rate — a godsword nobody forges six
         hundred times an hour — above the things people actually craft.
 
+        When `player` is supplied, rows the player cannot perform sort
+        below the ones they can, with `metric` as the tiebreaker inside
+        each group; they are ranked last rather than dropped, so a
+        caller browsing the catalogue still sees everything. Each row
+        carries `meets_requirements`, matching `/calc/{itemID}`.
+
         An item whose calculation fails (no priceable path, upstream
         error) is simply absent from the ranking rather than failing the
         whole request, the same reasoning `/calc/batch` uses to report
@@ -576,6 +582,7 @@ paths:
             the mechanics allow it.
           schema:
             type: string
+        - $ref: '#/components/parameters/HiscoreMode'
         - name: skill
           in: query
           description: Restrict the ranking to recipes of this skill.
@@ -583,12 +590,33 @@ paths:
             type: string
         - name: limit
           in: query
-          description: Rows to return. Defaults to 20, capped at 100.
+          description: |
+            Rows to return. `0` or omitted uses the default of 20; a
+            value above 100 is clamped to 100 rather than rejected.
           schema:
             type: integer
-            minimum: 1
-            maximum: 100
+            minimum: 0
             default: 20
+        - name: aph
+          in: query
+          description: |
+            Override actions-per-hour for every step of every path.
+            Omit to use each recipe's own value — the mechanics-derived
+            rates this ranking is built on.
+          schema:
+            type: integer
+            minimum: 0
+        - name: spread_pct
+          in: query
+          description: |
+            Override the assumed round-trip buy/sell spread, as a
+            percentage of the guide price. Omit to use the server
+            default.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 100
         - name: include_incomplete
           in: query
           description: |
@@ -1435,7 +1463,11 @@ components:
         crafts_per_hour:
           type: number
           format: double
-          description: The lower of actions-per-hour and the buy-limit rate.
+          description: |
+            The lower of the buy-limit rate and the rate the whole path
+            completes at (`1 / total_hours`). Not the root step's
+            `actions_per_hour`: on a chained path the root step runs
+            several times for each finished item.
         gp_per_hour:
           type: number
           format: double
@@ -1678,7 +1710,9 @@ components:
           description: |
             `gp_per_hour` capped by the binding input's Grand Exchange
             buy limit where one is known, equal to `gp_per_hour`
-            otherwise. This is the field `metric=gp_per_hour` sorts on.
+            otherwise. Never above `gp_per_hour`: the cap is on how
+            often the whole path can be completed. This is the field
+            `metric=gp_per_hour` sorts on.
         gp_per_xp:
           type: number
           format: double
@@ -1697,6 +1731,12 @@ components:
             The bought input whose buy limit produced
             `gp_per_hour_limited`. Absent when no bought input has a
             known buy limit.
+        meets_requirements:
+          type: boolean
+          description: |
+            Whether the player has every level this path needs. Absent
+            when no `player` was supplied — with no hiscore data,
+            "you qualify" would be a guess presented as fact.
 
     TopResponse:
       type: object
@@ -1709,7 +1749,9 @@ components:
           description: Number of rows returned (at most `limit`).
         rows:
           type: array
-          description: Best first, by `metric`.
+          description: |
+            Best first: achievable before unachievable when a `player`
+            was supplied, then by `metric`.
           items:
             $ref: '#/components/schemas/TopRow'
         assumptions:

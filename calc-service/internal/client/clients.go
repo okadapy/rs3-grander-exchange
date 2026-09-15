@@ -86,10 +86,15 @@ func (c *RecipeClient) BuyLimits(ctx context.Context, ids []int64) (map[int64]in
 }
 
 // AllItemIDs returns the output item ID of every recipe in the
-// catalogue. /calc/top walks this whole set to rank the catalogue by a
-// headline metric.
-func (c *RecipeClient) AllItemIDs(ctx context.Context) ([]int64, error) {
+// catalogue, or of every recipe in one skill when skill is non-empty.
+// /calc/top walks this set to rank the catalogue by a headline metric,
+// so filtering upstream is the difference between evaluating one
+// skill's recipes and evaluating all 5800 to throw most away.
+func (c *RecipeClient) AllItemIDs(ctx context.Context, skill string) ([]int64, error) {
 	u := c.Base + "/recipes/ids"
+	if skill = strings.TrimSpace(skill); skill != "" {
+		u += "?skill=" + url.QueryEscape(skill)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
