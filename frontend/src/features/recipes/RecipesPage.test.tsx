@@ -193,7 +193,16 @@ it('says that sorting only covers the loaded page', async () => {
   ).toBeInTheDocument();
 });
 
-it('shows the degradation notice while the socket is not open, and hides it once connected', async () => {
+it('asks a signed-out visitor to sign in for live prices', async () => {
+  backend();
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />);
+
+  await screen.findByRole('row', { name: /Ruby/ });
+  expect(screen.getByText(/Live prices require a signed-in token/)).toBeInTheDocument();
+  expect(screen.queryByText(/Connection lost/)).not.toBeInTheDocument();
+});
+
+it('stays quiet while the socket is still connecting and once it is open', async () => {
   backend();
   signedIn();
   renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />, {
@@ -201,17 +210,33 @@ it('shows the degradation notice while the socket is not open, and hides it once
   });
 
   await screen.findByRole('row', { name: /Ruby/ });
-  expect(
-    screen.getByText(/Live prices require a signed-in token/),
-  ).toBeInTheDocument();
+  expect(screen.queryByText(/Live prices require a signed-in token/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Connection lost/)).not.toBeInTheDocument();
 
   act(() => {
     FakeSocket.last?.onopen?.();
   });
 
-  await waitFor(() =>
-    expect(screen.queryByText(/Live prices require a signed-in token/)).not.toBeInTheDocument(),
-  );
+  await waitFor(() => expect(screen.queryByText(/Connection lost/)).not.toBeInTheDocument());
+  expect(screen.queryByText(/Live prices require a signed-in token/)).not.toBeInTheDocument();
+});
+
+it('tells a signed-in visitor that the connection dropped, not to sign in', async () => {
+  backend();
+  signedIn();
+  renderWithProviders(<RecipesPage skill="Crafting" onSkillChange={() => {}} />, {
+    socketFactory: (url) => new FakeSocket(url),
+  });
+
+  await screen.findByRole('row', { name: /Ruby/ });
+
+  act(() => {
+    FakeSocket.last?.onopen?.();
+    FakeSocket.last?.onclose?.({ code: 1008 });
+  });
+
+  expect(await screen.findByText(/Connection lost/)).toBeInTheDocument();
+  expect(screen.queryByText(/Live prices require a signed-in token/)).not.toBeInTheDocument();
 });
 
 it('marks the row stale when a live price tick arrives for an item on the page', async () => {

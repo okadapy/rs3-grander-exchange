@@ -6,6 +6,7 @@ import { canonicalSkill } from '../../assets/skills';
 import { useCalcBatch } from '../../api/queries/calc';
 import { useLatestPrices, useLiquidityStats } from '../../api/queries/prices';
 import { usePriceableItemIds, useSkillRecipes } from '../../api/queries/recipes';
+import { useAuth } from '../../auth/AuthProvider';
 import { QueryState } from '../../shared/QueryState';
 import { usePlayerPrefs } from '../character/usePlayerPrefs';
 import { useWs } from '../../ws/WsProvider';
@@ -91,6 +92,7 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
     includeIncomplete: filters.includeIncomplete,
   });
   const { status } = useWs();
+  const { token } = useAuth();
   const prices = useLatestPrices(pageIds, { pollMs: status === 'open' ? undefined : 30_000 });
   const stats = useLiquidityStats(pageIds);
   const live = useLivePrices(pageIds);
@@ -133,6 +135,17 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
     prices.isError ? prices.error : null,
   ].filter((entry): entry is Error => entry !== null);
 
+  // "Not open" covers a signed-out visitor, a socket still connecting and a
+  // dropped connection alike, so the notice has to say which one it is: a
+  // signed-in visitor was previously told to sign in. Nothing is shown while
+  // connecting so the notice does not flash on every load.
+  const livePricesNotice =
+    status === 'connecting' || status === 'open'
+      ? null
+      : token
+        ? 'Connection lost, so live prices are not arriving. Prices refresh every 30 seconds instead.'
+        : 'Live prices require a signed-in token. Sign in from the chat to receive them instantly; otherwise prices refresh every 30 seconds.';
+
   const retryMoney = () => {
     if (calc.isError) void calc.refetch();
     if (prices.isError) void prices.refetch();
@@ -153,11 +166,8 @@ export function RecipesPage({ skill, onSkillChange }: Props) {
 
       <AssumptionsBar assumptions={assumptions} />
 
-      {status !== 'open' && (
-        <Alert severity="info" variant="outlined">
-          Live prices require a signed-in token. Sign in from the chat to receive them instantly;
-          otherwise prices refresh every 30 seconds.
-        </Alert>
+      {livePricesNotice && (
+        <Alert severity="info" variant="outlined">{livePricesNotice}</Alert>
       )}
 
       {live.staleItemIds.size > 0 && (
